@@ -509,7 +509,7 @@ defmodule Cursor do
       iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.get()
       {2, nil, nil}
   """
-  @spec get(t()) :: {nil | t(), nil | t(), nil | t()}
+  @spec get(t()) :: {term(), term(), term()}
   def get(%Cursor{prev: prev, current: current, next: next}) do
     {List.first(prev), current, List.first(next)}
   end

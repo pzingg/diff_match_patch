@@ -444,6 +444,14 @@ defmodule Diff do
     end
   end
 
+  @spec advance1(
+          non_neg_integer(),
+          non_neg_integer(),
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          non_neg_integer()
+        ) :: {non_neg_integer(), non_neg_integer()}
   defp advance1(x1, y1, text1, text1_length, text2, text2_length) do
     if x1 < text1_length && y1 < text2_length &&
          String.at(text1, x1) == String.at(text2, y1) do
@@ -547,6 +555,14 @@ defmodule Diff do
     end
   end
 
+  @spec advance2(
+          non_neg_integer(),
+          non_neg_integer(),
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          non_neg_integer()
+        ) :: {non_neg_integer(), non_neg_integer()}
   defp advance2(x2, y2, text1, text1_length, text2, text2_length) do
     if x2 < text1_length && y2 < text2_length &&
          String.at(text1, text1_length - x2 - 1) == String.at(text2, text1_length - y2 - 1) do
@@ -946,12 +962,15 @@ defmodule Diff do
 
   def cleanup_semantic(diffs) do
     # Double-ended queue of qualities
+    equalities = :queue.new()
+    cursor = Cursor.from_list(diffs, position: :first)
+
     {diffs, changes} =
-      Cursor.from_list(diffs, position: :first)
-      |> check_equalities(
-        :queue.new(),
-        nil,
+      check_equalities(
+        cursor,
         false,
+        equalities,
+        nil,
         0,
         0,
         0,
@@ -972,7 +991,16 @@ defmodule Diff do
     end
   end
 
-  # `acc` accumulates "previous" diffs in reverse order
+  @spec check_equalities(
+          Cursor.t(),
+          boolean(),
+          :queue.queue(),
+          nil | t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) :: {difflist(), boolean()}
   defp check_equalities(
          %Cursor{current: this_diff} = diffs,
          changes,
@@ -1023,7 +1051,7 @@ defmodule Diff do
                   # Insert a corresponding an insert.
                   c
                   |> Cursor.delete(1)
-                  |> Cursor.insert([{:delete, last_equality} | {:insert, last_equality}])
+                  |> Cursor.insert([{:delete, last_equality}, {:insert, last_equality}])
               end
 
             # Throw away the equality we just deleted.
@@ -1058,9 +1086,9 @@ defmodule Diff do
 
       check_equalities(
         cursor,
+        changes,
         equalities,
         last_equality,
-        changes,
         length_insertions1,
         length_deletions1,
         length_insertions2,
@@ -1132,7 +1160,9 @@ defmodule Diff do
     end
   end
 
-  defp cleanup_semantic_lossless(diffs), do: diffs
+  defp cleanup_semantic_lossless(diffs) do
+    diffs
+  end
 
   # Define some regex patterns for matching boundaries.
   @alphanumeric ~r/^[0-9A-Za-z]+$/
@@ -1226,6 +1256,14 @@ defmodule Diff do
     |> remove_dummy()
   end
 
+  @spec check_first_pass(
+          Cursor.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          nil | t()
+        ) :: difflist()
   defp check_first_pass(
          %Cursor{} = diffs,
          count_delete,
@@ -1277,10 +1315,10 @@ defmodule Diff do
 
                             diffs
                             |> Cursor.delete(1)
-                            |> Cursor.insert({:equal, prev_text <> prefix})
+                            |> Cursor.insert([{:equal, prev_text <> prefix}])
                           else
                             diffs
-                            |> Cursor.insert({:equal, prefix})
+                            |> Cursor.insert([{:equal, prefix}])
                           end
 
                         {diffs1, text1, text2}
@@ -1297,7 +1335,7 @@ defmodule Diff do
                       diffs1 =
                         diffs
                         |> Cursor.delete(1)
-                        |> Cursor.insert({:equal, suffix <> next_text})
+                        |> Cursor.insert([{:equal, suffix <> next_text}])
 
                       {diffs1, text1, text2}
                     else
@@ -1359,6 +1397,7 @@ defmodule Diff do
     |> check_second_pass(false)
   end
 
+  @spec check_second_pass(Cursor.t(), boolean()) :: {difflist(), boolean()}
   defp check_second_pass(%Cursor{} = diffs, changes) do
     {prev_diff, this_diff, next_diff} = Cursor.get(diffs)
 
