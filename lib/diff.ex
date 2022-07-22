@@ -1,8 +1,10 @@
 defmodule Diff do
   @moduledoc """
-   The data structure representing a diff is a list of `Diff` tuples,
-   each tuple is an operation atom and a string. The operations are:
-   `:delete`, `:insert`, `:equal`
+  DIFF FUNCTIONS
+
+  The data structure representing a diff is a list of `Diff` tuples,
+  each tuple is an operation atom and a string. The operations are:
+  `:delete`, `:insert`, `:equal`
 
   Example:
 
@@ -12,6 +14,8 @@ defmodule Diff do
 
   which means: delete "Hello", add "Goodbye" and keep " world."
   """
+
+  import DiffMatchPatch
 
   alias DiffMatchPatch.Options
 
@@ -894,12 +898,15 @@ defmodule Diff do
         longtext,
         shorttext
       ) do
-    pattern = substring(shorttext, j + 1)
+    case index_of(seed, shorttext, j + 1) do
+      -1 ->
+        if String.length(best_common) * 2 >= String.length(longtext) do
+          {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
+        else
+          nil
+        end
 
-    case String.split(pattern, seed, parts: 2) do
-      [left, _right] ->
-        j = String.length(left) + j + 1
-
+      j ->
         {longa, longb} = String.split_at(longtext, i)
         {shorta, shortb} = String.split_at(shorttext, j)
         {prefix, ptext1, ptext2} = common_prefix(longb, shortb)
@@ -942,13 +949,6 @@ defmodule Diff do
             longtext,
             shorttext
           )
-        end
-
-      _notfound ->
-        if String.length(best_common) * 2 >= String.length(longtext) do
-          {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
-        else
-          nil
         end
     end
   end
@@ -1742,20 +1742,6 @@ defmodule Diff do
     case List.last(diffs) do
       {:equal, ""} -> Enum.drop(diffs, -1)
       _ -> diffs
-    end
-  end
-
-  # Mimic Java substring
-  @spec substring(String.t(), non_neg_integer()) :: String.t()
-  defp substring(s, start), do: String.slice(s, start..-1)
-
-  # Mimic Java substring
-  @spec substring(String.t(), non_neg_integer(), non_neg_integer()) :: String.t()
-  defp substring(s, start, exc_end) do
-    if exc_end > start do
-      String.slice(s, start..(exc_end - 1))
-    else
-      ""
     end
   end
 end
