@@ -979,10 +979,12 @@ defmodule Diff do
 
     diffs =
       if changes do
-        diffs |> cleanup_merge() |> cleanup_semantic_lossless()
+        diffs |> cleanup_merge()
       else
-        cleanup_semantic_lossless(diffs)
+        diffs
       end
+
+    diffs = diffs |> Cursor.from_list(position: :second) |> cleanup_semantic_lossless()
 
     if Enum.count(diffs) < 2 do
       diffs
@@ -1160,8 +1162,134 @@ defmodule Diff do
     end
   end
 
-  defp cleanup_semantic_lossless(diffs) do
-    diffs
+  # Look for single edits surrounded on both sides by equalities
+  # which can be shifted sideways to align the edit to a word boundary.
+  # e.g: The c<ins>at c</ins>ame. -> The <ins>cat </ins>came.
+  # `diffs` LinkedList of Diff objects.
+  defp cleanup_semantic_lossless(%Cursor{} = diffs) do
+    {prev_diff, this_diff, next_diff} = Cursor.get(diffs)
+
+    # Intentionally ignore the first and last element (don't need checking).
+    if is_nil(prev_diff) || is_nil(next_diff) do
+      Cursor.to_list(diffs)
+    else
+      {prev_op, prev_text} = prev_diff
+      {next_op, next_text} = next_diff
+
+      cursor =
+        if prev_op == :equal && next_op == :equal do
+          # This is a single edit surrounded by equalities.
+          equality1 = prev_text
+          {op, edit} = this_diff
+          equality2 = next_text
+
+          # First, shift the edit as far left as possible.
+          {suffix, text1, text2} = common_suffix(equality1, edit)
+
+          {equality1, edit, equality2} =
+            if suffix != "" do
+              {text1, text2, suffix <> equality2}
+            else
+              {equality1, edit, equality2}
+            end
+
+          # Second, step character by character right, looking for the best fit.
+          best_equality1 = equality1
+          best_edit = edit
+          best_equality2 = equality2
+
+          best_score =
+            cleanup_semantic_score(equality1, edit) + cleanup_semantic_score(edit, equality2)
+
+          {best_equality1, best_edit, best_equality2} =
+            get_best_score(
+              equality1,
+              edit,
+              equality2,
+              best_equality1,
+              best_edit,
+              best_equality2,
+              best_score
+            )
+
+          if prev_text != best_equality1 do
+            # We have an improvement, save it back to the diff.
+            if best_equality1 != "" do
+              # Update prev_diff.
+              diffs
+              |> Cursor.delete_before(1)
+              |> Cursor.insert_before([{prev_op, best_equality1}])
+            else
+              # Delete prev_diff.
+              Cursor.delete_before(diffs, 1)
+            end
+
+            # Update this_diff.
+            diffs =
+              diffs
+              |> Cursor.delete(1)
+              |> Cursor.insert_before([{op, best_edit}])
+
+            # Now pointing at next_diff
+
+            if best_equality2 != "" do
+              # Update next_diff
+              diffs
+              |> Cursor.delete(1)
+              |> Cursor.insert_before([{next_op, best_equality2}])
+            else
+              # Delete next_diff
+              Cursor.delete(diffs, 1)
+            end
+          else
+            Cursor.move_forward(diffs)
+          end
+        else
+          Cursor.move_forward(diffs)
+        end
+
+      cleanup_semantic_lossless(cursor)
+    end
+  end
+
+  defp get_best_score(
+         equality1,
+         edit,
+         equality2,
+         best_equality1,
+         best_edit,
+         best_equality2,
+         best_score
+       ) do
+    if edit == "" || equality2 == "" do
+      {best_equality1, best_edit, best_equality2}
+    else
+      edit_0 = String.first(edit)
+      equality2_0 = String.first(equality2)
+
+      if edit_0 != equality2_0 do
+        {best_equality1, best_edit, best_equality2}
+      else
+        equality1 = equality1 <> edit_0
+        edit = substring(edit, 1) <> equality2_0
+        equality2 = substring(equality2, 1)
+        score = cleanup_semantic_score(equality1, edit) + cleanup_semantic_score(edit, equality2)
+        # The >= encourages trailing rather than leading whitespace on edits.
+        if score >= best_score do
+          get_best_score(equality1, edit, equality2, equality1, edit, equality2, score)
+        else
+          get_best_score(
+            equality1,
+            edit,
+            equality2,
+            best_equality1,
+            best_edit,
+            best_equality2,
+            best_score
+          )
+        end
+      end
+    end
   end
 
   # Define some regex patterns for matching boundaries.
