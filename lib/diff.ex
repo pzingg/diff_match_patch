@@ -1166,6 +1166,7 @@ defmodule Diff do
   # which can be shifted sideways to align the edit to a word boundary.
   # e.g: The c<ins>at c</ins>ame. -> The <ins>cat </ins>came.
   # `diffs` LinkedList of Diff objects.
+  @spec cleanup_semantic_lossless(Cursor.t()) :: difflist()
   defp cleanup_semantic_lossless(%Cursor{} = diffs) do
     {prev_diff, this_diff, next_diff} = Cursor.get(diffs)
 
@@ -1252,6 +1253,16 @@ defmodule Diff do
     end
   end
 
+  @spec get_best_score(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          non_neg_integer()
+        ) ::
+          {String.t(), String.t(), String.t()}
   defp get_best_score(
          equality1,
          edit,
@@ -1347,6 +1358,148 @@ defmodule Diff do
 
       true ->
         0
+    end
+  end
+
+  @doc """
+  Reduce the number of edits by eliminating operationally trivial equalities.
+  `diffs` LinkedList of Diff objects.
+  """
+  def cleanup_efficiency([], _edit_cost), do: []
+
+  def cleanup_efficiency(diffs, edit_cost) do
+    equalities = :queue.new()
+    %Cursor{current: safe_diff} = cursor = Cursor.from_list(diffs, position: :first)
+
+    {diffs, changes} =
+      check_efficiency(cursor, false, equalities, nil, safe_diff, 0, 0, 0, 0, edit_cost)
+
+    if changes do
+      cleanup_merge(diffs)
+    else
+      diffs
+    end
+  end
+
+  # `equalities` Double-ended queue of equalities.
+  # `last_equality` Always equal to equalities.peek().text
+  # `safe_diff` The last Diff that is known to be unsplittable.
+  # `pre_ins` 1 if there is an insertion operation before the last equality.
+  # `pre_del` 1 if there is a deletion operation before the last equality.
+  # `post_ins` 1 if there is an insertion operation after the last equality.
+  # `post_del` 1 if there is a deletion operation after the last equality.
+  # `edit_cost` Cost of an empty edit operation in terms of edit characters.
+  def check_efficiency(
+        %Cursor{current: this_diff} = diffs,
+        changes,
+        equalities,
+        last_equality,
+        safe_diff,
+        pre_ins,
+        pre_del,
+        post_ins,
+        post_del,
+        edit_cost
+      ) do
+    if is_nil(this_diff) do
+      {Cursor.to_list(diffs), changes}
+    else
+      {op, text} = this_diff
+
+      {cursor, changes, equalities, last_equality, safe_diff, pre_ins, pre_del, post_ins,
+       post_del} =
+        if op == :equal do
+          # Equality found.
+          {equalities, last_equality, safe_diff, pre_ins, pre_del} =
+            if String.length(text) < edit_cost && (post_ins != 0 || post_del != 0) do
+              # Candidate found.
+              {:queue.cons(this_diff, equalities), text, safe_diff, post_ins, post_del}
+            else
+              # Not a candidate, and can never become one.
+              {:queue.new(), nil, this_diff, pre_ins, pre_del}
+            end
+
+          {Cursor.move_forward(diffs), changes, equalities, last_equality, safe_diff, pre_ins,
+           pre_del, 0, 0}
+        else
+          # An insertion or deletion.
+          {post_ins, post_del} =
+            if op == :delete do
+              {post_ins, 1}
+            else
+              {1, post_del}
+            end
+
+          # Five types to be split:
+          # <ins>A</ins><del>B</del>XY<ins>C</ins><del>D</del>
+          # <ins>A</ins>X<ins>C</ins><del>D</del>
+          # <ins>A</ins><del>B</del>X<ins>C</ins>
+          # <ins>A</del>X<ins>C</ins><del>D</del>
+          # <ins>A</ins><del>B</del>X<del>C</del>
+          ins_del_count = pre_ins + pre_del + post_ins + post_del
+
+          if !is_nil(last_equality) &&
+               (ins_del_count == 4 ||
+                  (String.length(last_equality) * 2 < edit_cost && ins_del_count == 3)) do
+            # Logger.debug("Splitting: '#{last_equality}'")
+            # Walk back to offending equality.
+            # Replace equality with a delete.
+            # Insert a corresponding an insert.
+            diffs =
+              diffs
+              |> Cursor.find_back!(:queue.head(equalities))
+              |> Cursor.delete(1)
+              |> Cursor.insert_before([{:delete, last_equality}, {:insert, last_equality}])
+
+            # Throw away the equality we just deleted.
+            equalities = :queue.tail(equalities)
+
+            {diffs, equalities, safe_diff, post_ins, post_del} =
+              if pre_ins != 0 && pre_del != 0 do
+                # No changes made which could affect previous entry, keep going.
+                {diffs, :queue.new(), this_diff, 1, 1}
+              else
+                equalities =
+                  if !:queue.is_empty(equalities) do
+                    # Throw away the previous equality (it needs to be reevaluated).
+                    :queue.tail(equalities)
+                  else
+                    equalities
+                  end
+
+                target_diff =
+                  if :queue.is_empty(equalities) do
+                    # There are no previous questionable equalities,
+                    # walk back to the last known safe diff.
+                    safe_diff
+                  else
+                    # There is an equality we can fall back to.
+                    :queue.head(equalities)
+                  end
+
+                {Cursor.find_back!(diffs, target_diff), equalities, safe_diff, 0, 0}
+              end
+
+            {Cursor.move_forward(diffs), true, equalities, nil, safe_diff, pre_ins, pre_del,
+             post_ins, post_del}
+          else
+            {Cursor.move_forward(diffs), changes, equalities, last_equality, safe_diff, pre_ins,
+             pre_del, 0, 0}
+          end
+        end
+
+      check_efficiency(
+        cursor,
+        changes,
+        equalities,
+        last_equality,
+        safe_diff,
+        pre_ins,
+        pre_del,
+        post_ins,
+        post_del,
+        edit_cost
+      )
     end
   end
 

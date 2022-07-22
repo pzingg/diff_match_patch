@@ -484,6 +484,18 @@ defmodule Cursor do
   end
 
   @doc """
+  Moves the position of the Cursor back through the "prev" list to the given item.
+  Raises if the item cannot be found.
+  """
+  @spec find_back!(t(), term()) :: t()
+  def find_back!(%Cursor{} = c, item) do
+    case find_back(c, item) do
+      nil -> raise "item not found in Cursor"
+      found -> found
+    end
+  end
+
+  @doc """
   Return a 3-tuple of the previous, current, and next items relative to
   the Cursor's current position.
 
