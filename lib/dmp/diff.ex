@@ -808,13 +808,16 @@ defmodule Dmp.Diff do
 
   @doc """
   Do the two texts share a substring which is at least half the length of
-  the longer text?
-  This speedup can produce non-minimal diffs.
-   * @param text1 First string.
-   * @param text2 Second string.
+  the longer text? This speedup can produce non-minimal diffs.
+
+  `text1` First string.
+  `text2` Second string.
+  `deadline` Expiration timeout (Unix epoch timestamp in milliseconds),
+
   Returns five element String array, containing the prefix of text1, the
     suffix of text1, the prefix of text2, the suffix of text2 and the
-    common middle.  Or `nil` if there was no match.
+    common middle.  Or `nil` if there was no match. Returns `nil` if
+    no timeout is specified.
   """
   @spec half_match(String.t(), String.t(), non_neg_integer()) ::
           nil | {String.t(), String.t(), String.t(), String.t(), String.t()}

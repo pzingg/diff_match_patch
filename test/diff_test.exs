@@ -5,6 +5,10 @@ defmodule DiffTest do
 
   # doctest Dmp.Diff
 
+  defp large_timeout() do
+    :os.system_time(:millisecond) + 60_000
+  end
+
   defp rebuild_texts(diffs) do
     # Construct the two texts which made up the diff originally.
     text1 = ""
@@ -73,6 +77,36 @@ defmodule DiffTest do
       # Some overly clever languages (C#) may treat ligatures as equal to their
       # component letters.  E.g. U+FB01 == 'fi'
       assert 0 == Diff.common_overlap("fi", "\ufb01i")
+    end
+  end
+
+  describe "half_match" do
+    test "no match 1" do
+      assert nil == Diff.half_match("1234567890", "abcdef", large_timeout)
+    end
+
+    test "no match 2" do
+      assert nil == Diff.half_match("12345", "23", large_timeout)
+    end
+
+    test "single match 1" do
+      assert {"12", "90", "a", "z", "345678"} ==
+               Diff.half_match("1234567890", "a345678z", large_timeout)
+    end
+
+    test "single match 2" do
+      assert {"a", "z", "12", "90", "345678"} ==
+               Diff.half_match("a345678z", "1234567890", large_timeout)
+    end
+
+    test "single match 3" do
+      assert {"abc", "z", "1234", "0", "56789"} ==
+               Diff.half_match("abc56789z", "1234567890", large_timeout)
+    end
+
+    test "single match 4" do
+      assert {"a", "xyz", "1", "7890", "23456"} ==
+               Diff.half_match("a23456xyz", "1234567890", large_timeout)
     end
   end
 end
