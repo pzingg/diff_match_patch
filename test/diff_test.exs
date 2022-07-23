@@ -5,8 +5,8 @@ defmodule DiffTest do
 
   # doctest Dmp.Diff
 
-  defp large_timeout() do
-    :os.system_time(:millisecond) + 60_000
+  defp one_second() do
+    :os.system_time(:millisecond) + 1_000
   end
 
   defp rebuild_texts(diffs) do
@@ -82,34 +82,47 @@ defmodule DiffTest do
 
   describe "half_match" do
     test "no match 1" do
-      assert nil == Diff.half_match("1234567890", "abcdef", large_timeout)
+      assert nil == Diff.half_match("1234567890", "abcdef", one_second)
     end
 
     test "no match 2" do
-      assert nil == Diff.half_match("12345", "23", large_timeout)
+      assert nil == Diff.half_match("12345", "23", one_second)
     end
 
-    @tag :good
     test "single match 1" do
       assert {"12", "90", "a", "z", "345678"} ==
-               Diff.half_match("1234567890", "a345678z", large_timeout)
+               Diff.half_match("1234567890", "a345678z", one_second)
     end
 
-    @tag :good
     test "single match 2" do
       assert {"a", "z", "12", "90", "345678"} ==
-               Diff.half_match("a345678z", "1234567890", large_timeout)
+               Diff.half_match("a345678z", "1234567890", one_second)
     end
 
     test "single match 3" do
       assert {"abc", "z", "1234", "0", "56789"} ==
-               Diff.half_match("abc56789z", "1234567890", large_timeout)
+               Diff.half_match("abc56789z", "1234567890", one_second)
     end
 
-    @tag :skip
     test "single match 4" do
       assert {"a", "xyz", "1", "7890", "23456"} ==
-               Diff.half_match("a23456xyz", "1234567890", large_timeout)
+               Diff.half_match("a23456xyz", "1234567890", one_second)
+    end
+
+    @tag :good
+    test "mulitple match 1" do
+      assert {"12123", "123121", "a", "z", "1234123451234"} ==
+               Diff.half_match("121231234123451234123121", "a1234123451234z", one_second)
+    end
+
+    test "multiple match 2" do
+      assert {"", "-=-=-=-=-=", "x", "", "x-=-=-=-=-=-=-="} ==
+               Diff.half_match("x-=-=-=-=-=-=-=-=-=-=-=-=", "xx-=-=-=-=-=-=-=", one_second)
+    end
+
+    test "multiple match 3" do
+      assert {"-=-=-=-=-=", "", "", "y", "-=-=-=-=-=-=-=y"} ==
+               Diff.half_match("-=-=-=-=-=-=-=-=-=-=-=-=y", "-=-=-=-=-=-=-=yy", one_second)
     end
   end
 end

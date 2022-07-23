@@ -842,14 +842,12 @@ defmodule Dmp.Diff do
         nil
       else
         # First check if the second quarter is the seed for a half-match.
-        begin_index = div(longtext_length + 3, 4)
-        end_index = begin_index + div(longtext_length, 4)
-        hm1 = half_match_impl(longtext, shorttext, begin_index, end_index)
+        i = div(longtext_length + 3, 4)
+        hm1 = half_match_impl(longtext, shorttext, i)
 
         # Check again based on the third quarter.
-        begin_index = div(longtext_length + 1, 2)
-        end_index = begin_index + div(longtext_length, 4)
-        hm2 = half_match_impl(longtext, shorttext, begin_index, end_index)
+        i = div(longtext_length + 1, 2)
+        hm2 = half_match_impl(longtext, shorttext, i)
 
         hm =
           case {hm1, hm2} do
@@ -887,11 +885,13 @@ defmodule Dmp.Diff do
     end
   end
 
-  @spec half_match_impl(String.t(), String.t(), non_neg_integer(), non_neg_integer()) ::
+  @spec half_match_impl(String.t(), String.t(), non_neg_integer()) ::
           nil | {String.t(), String.t(), String.t(), String.t(), String.t()}
-  defp half_match_impl(longtext, shorttext, begin_index, end_index) do
-    seed = String.slice(longtext, begin_index, end_index)
-    half_test(seed, begin_index, -1, "", "", "", "", "", longtext, shorttext)
+  defp half_match_impl(longtext, shorttext, i) do
+    seed_length = div(String.length(longtext), 4)
+    seed = String.slice(longtext, i, seed_length)
+    j = index_of(shorttext, seed)
+    half_test(seed, i, j, "", "", "", "", "", longtext, shorttext)
   end
 
   def half_test(
@@ -906,7 +906,7 @@ defmodule Dmp.Diff do
         longtext,
         shorttext
       ) do
-    case index_of(shorttext, seed, j + 1) do
+    case j do
       -1 ->
         if String.length(best_common) * 2 >= String.length(longtext) do
           {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
@@ -914,7 +914,7 @@ defmodule Dmp.Diff do
           nil
         end
 
-      j ->
+      _ ->
         {longa, longb} = String.split_at(longtext, i)
         {shorta, shortb} = String.split_at(shorttext, j)
         {prefix, ptext1, ptext2} = common_prefix(longb, shortb)
@@ -922,42 +922,35 @@ defmodule Dmp.Diff do
         {suffix, stext1, stext2} = common_suffix(longa, shorta)
         suffix_length = String.length(suffix)
 
-        if String.length(best_common) < suffix_length + suffix_length do
-          best_common =
-            substring(shorttext, j - suffix_length, j) <>
-              substring(shorttext, j, j + prefix_length)
+        {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common} =
+          if String.length(best_common) < prefix_length + suffix_length do
+            best_common =
+              substring(shorttext, j - suffix_length, j) <>
+                substring(shorttext, j, j + prefix_length)
 
-          best_longtext_a = substring(longtext, 0, i - suffix_length)
-          best_longtext_b = substring(longtext, i + prefix_length)
-          best_shorttext_a = substring(shorttext, 0, j - suffix_length)
-          best_shorttext_b = substring(shorttext, j + prefix_length)
+            best_longtext_a = substring(longtext, 0, i - suffix_length)
+            best_longtext_b = substring(longtext, i + prefix_length)
+            best_shorttext_a = substring(shorttext, 0, j - suffix_length)
+            best_shorttext_b = substring(shorttext, j + prefix_length)
+            {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
+          else
+            {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
+          end
 
-          half_test(
-            seed,
-            i,
-            j,
-            best_longtext_a,
-            best_longtext_b,
-            best_shorttext_a,
-            best_shorttext_b,
-            best_common,
-            longtext,
-            shorttext
-          )
-        else
-          half_test(
-            seed,
-            i,
-            j,
-            best_longtext_a,
-            best_longtext_b,
-            best_shorttext_a,
-            best_shorttext_b,
-            best_common,
-            longtext,
-            shorttext
-          )
-        end
+        j = index_of(shorttext, seed, j + 1)
+
+        half_test(
+          seed,
+          i,
+          j,
+          best_longtext_a,
+          best_longtext_b,
+          best_shorttext_a,
+          best_shorttext_b,
+          best_common,
+          longtext,
+          shorttext
+        )
     end
   end
 
