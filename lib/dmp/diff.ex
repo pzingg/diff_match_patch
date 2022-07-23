@@ -735,8 +735,10 @@ defmodule Dmp.Diff do
 
   @doc """
   Determine if the suffix of one string is the prefix of another.
+
   `text1` - First string.
   `text2` - Second string.
+
   Returns the number of characters common to the end of the first
   string and the start of the second string.
   """
