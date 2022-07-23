@@ -123,11 +123,11 @@ defmodule Dmp.Diff do
         [{:delete, text1}]
 
       true ->
-        {longtext, longtext_length, shorttext, shorttext_length} =
+        {longtext, shorttext, longtext_length, shorttext_length} =
           if text1_length > text2_length do
-            {text1, text1_length, text2, text2_length}
+            {text1, text2, text1_length, text2_length}
           else
-            {text2, text2_length, text1, text1_length}
+            {text2, text1, text2_length, text1_length}
           end
 
         case String.split(longtext, shorttext, parts: 2) do
@@ -830,22 +830,26 @@ defmodule Dmp.Diff do
       text1_length = String.length(text1)
       text2_length = String.length(text2)
 
-      {longtext, shorttext, longlen, shortlen} =
+      {longtext, shorttext, longtext_length, shorttext_length} =
         if text1_length > text2_length do
           {text1, text2, text1_length, text2_length}
         else
           {text2, text1, text2_length, text1_length}
         end
 
-      if longlen < 4 || shortlen * 2 < longlen do
+      if longtext_length < 4 || shorttext_length * 2 < longtext_length do
         # Pointless.
         nil
       else
         # First check if the second quarter is the seed for a half-match.
-        hm1 = half_match_impl(longtext, shorttext, ceil((longlen + 3) / 4))
+        begin_index = div(longtext_length + 3, 4)
+        end_index = begin_index + div(longtext_length, 4)
+        hm1 = half_match_impl(longtext, shorttext, begin_index, end_index)
 
         # Check again based on the third quarter.
-        hm2 = half_match_impl(longtext, shorttext, ceil((longlen + 1) / 2))
+        begin_index = div(longtext_length + 1, 2)
+        end_index = begin_index + div(longtext_length, 4)
+        hm2 = half_match_impl(longtext, shorttext, begin_index, end_index)
 
         hm =
           case {hm1, hm2} do
@@ -883,12 +887,11 @@ defmodule Dmp.Diff do
     end
   end
 
-  @spec half_match_impl(String.t(), String.t(), non_neg_integer()) ::
+  @spec half_match_impl(String.t(), String.t(), non_neg_integer(), non_neg_integer()) ::
           nil | {String.t(), String.t(), String.t(), String.t(), String.t()}
-  defp half_match_impl(longtext, shorttext, i) do
-    # Start with a 1/4 length substring at position i as a seed.
-    seed = String.slice(longtext, i, i + div(String.length(longtext), 4))
-    half_test(seed, i, -1, "", "", "", "", "", longtext, shorttext)
+  defp half_match_impl(longtext, shorttext, begin_index, end_index) do
+    seed = String.slice(longtext, begin_index, end_index)
+    half_test(seed, begin_index, -1, "", "", "", "", "", longtext, shorttext)
   end
 
   def half_test(
@@ -903,7 +906,7 @@ defmodule Dmp.Diff do
         longtext,
         shorttext
       ) do
-    case index_of(seed, shorttext, j + 1) do
+    case index_of(shorttext, seed, j + 1) do
       -1 ->
         if String.length(best_common) * 2 >= String.length(longtext) do
           {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
