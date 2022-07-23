@@ -722,7 +722,7 @@ defmodule Dmp.Diff do
         Enum.reduce_while(1..n, "", fn i, acc ->
           ch = String.at(text1, text1_length - i)
 
-          if ch == String.at(text2, i) do
+          if ch == String.at(text2, text2_length - i) do
             {:cont, ch <> acc}
           else
             {:halt, acc}
