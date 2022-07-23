@@ -351,7 +351,7 @@ public class diff_match_patch {
    * @param text1 Old string to be diffed.
    * @param text2 New string to be diffed.
    * @param deadline Time at which to bail if not yet complete.
-   * @return LinkedList of Diff objects.
+   * @return list of Diff objects.
    */
   protected LinkedList<Diff> diff_bisect(String text1, String text2,
       long deadline) {
@@ -474,7 +474,7 @@ public class diff_match_patch {
    * @param x Index of split point in text1.
    * @param y Index of split point in text2.
    * @param deadline Time at which to bail if not yet complete.
-   * @return LinkedList of Diff objects.
+   * @return list of Diff objects.
    */
   private LinkedList<Diff> diff_bisectSplit(String text1, String text2,
                                             int x, int y, long deadline) {
@@ -749,7 +749,7 @@ public class diff_match_patch {
 
   /**
    * Reduce the number of edits by eliminating semantically trivial equalities.
-   * @param diffs LinkedList of Diff objects.
+   * @param diffs list of Diff objects.
    */
   public void diff_cleanupSemantic(LinkedList<Diff> diffs) {
     if (diffs.isEmpty()) {
@@ -898,7 +898,7 @@ public class diff_match_patch {
    * Look for single edits surrounded on both sides by equalities
    * which can be shifted sideways to align the edit to a word boundary.
    * e.g: The c<ins>at c</ins>ame. -> The <ins>cat </ins>came.
-   * @param diffs LinkedList of Diff objects.
+   * @param diffs list of Diff objects.
    */
   public void diff_cleanupSemanticLossless(LinkedList<Diff> diffs) {
     String equality1, edit, equality2;
@@ -1038,7 +1038,7 @@ public class diff_match_patch {
 
   /**
    * Reduce the number of edits by eliminating operationally trivial equalities.
-   * @param diffs LinkedList of Diff objects.
+   * @param diffs list of Diff objects.
    */
   public void diff_cleanupEfficiency(LinkedList<Diff> diffs) {
     if (diffs.isEmpty()) {
@@ -1146,7 +1146,7 @@ public class diff_match_patch {
   /**
    * Reorder and merge like edit sections.  Merge equalities.
    * Any edit section can move as long as it doesn't cross an equality.
-   * @param diffs LinkedList of Diff objects.
+   * @param diffs list of Diff objects.
    */
   public void diff_cleanupMerge(LinkedList<Diff> diffs) {
     diffs.add(new Diff(Operation.EQUAL, ""));  // Add a dummy entry at the end.
@@ -1764,7 +1764,7 @@ public class diff_match_patch {
    * A set of diffs will be computed.
    * @param text1 Old text.
    * @param text2 New text.
-   * @return LinkedList of Patch objects.
+   * @return list of Patch objects.
    */
   public LinkedList<Patch> patch_make(String text1, String text2) {
     if (text1 == null || text2 == null) {
@@ -1783,7 +1783,7 @@ public class diff_match_patch {
    * Compute a list of patches to turn text1 into text2.
    * text1 will be derived from the provided diffs.
    * @param diffs Array of Diff objects for text1 to text2.
-   * @return LinkedList of Patch objects.
+   * @return list of Patch objects.
    */
   public LinkedList<Patch> patch_make(LinkedList<Diff> diffs) {
     if (diffs == null) {
@@ -1800,7 +1800,7 @@ public class diff_match_patch {
    * @param text1 Old text
    * @param text2 Ignored.
    * @param diffs Array of Diff objects for text1 to text2.
-   * @return LinkedList of Patch objects.
+   * @return list of Patch objects.
    * @deprecated Prefer patch_make(String text1, LinkedList<Diff> diffs).
    */
   @Deprecated public LinkedList<Patch> patch_make(String text1, String text2,
@@ -1813,7 +1813,7 @@ public class diff_match_patch {
    * text2 is not provided, diffs are the delta between text1 and text2.
    * @param text1 Old text.
    * @param diffs Array of Diff objects for text1 to text2.
-   * @return LinkedList of Patch objects.
+   * @return list of Patch objects.
    */
   public LinkedList<Patch> patch_make(String text1, LinkedList<Diff> diffs) {
     if (text1 == null || diffs == null) {
@@ -2093,7 +2093,7 @@ public class diff_match_patch {
    * Look through the patches and break up any which are longer than the
    * maximum limit of the match algorithm.
    * Intended to be called only from within patch_apply.
-   * @param patches LinkedList of Patch objects.
+   * @param patches list of Patch objects.
    */
   public void patch_splitMax(LinkedList<Patch> patches) {
     short patch_size = Match_MaxBits;

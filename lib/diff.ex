@@ -261,7 +261,7 @@ defmodule Diff do
   `text2` - New string to be diffed.
   `deadline` - Time at which to bail if not yet complete.
 
-  Returns LinkedList of Diff objects.
+  Returns list of Diff objects.
   """
   @spec bisect(String.t(), String.t(), non_neg_integer()) :: difflist()
   def bisect(text1, text2, deadline) do
@@ -955,7 +955,7 @@ defmodule Diff do
 
   @doc """
   Reduce the number of edits by eliminating semantically trivial equalities.
-  `diffs` - LinkedList of Diff objects.
+  `diffs` - list of Diff objects.
   """
   @spec cleanup_semantic(difflist()) :: difflist()
   def cleanup_semantic([]), do: []
@@ -1165,7 +1165,7 @@ defmodule Diff do
   # Look for single edits surrounded on both sides by equalities
   # which can be shifted sideways to align the edit to a word boundary.
   # e.g: The c<ins>at c</ins>ame. -> The <ins>cat </ins>came.
-  # `diffs` LinkedList of Diff objects.
+  # `diffs` list of Diff objects.
   @spec cleanup_semantic_lossless(Cursor.t()) :: difflist()
   defp cleanup_semantic_lossless(%Cursor{} = diffs) do
     {prev_diff, this_diff, next_diff} = Cursor.get(diffs)
@@ -1363,16 +1363,16 @@ defmodule Diff do
 
   @doc """
   Reduce the number of edits by eliminating operationally trivial equalities.
-  `diffs` LinkedList of Diff objects.
+  `diffs` list of Diff objects.
   """
-  def cleanup_efficiency([], _edit_cost), do: []
+  def cleanup_efficiency([], _diff_edit_cost), do: []
 
-  def cleanup_efficiency(diffs, edit_cost) do
+  def cleanup_efficiency(diffs, diff_edit_cost) do
     equalities = :queue.new()
     %Cursor{current: safe_diff} = cursor = Cursor.from_list(diffs, position: :first)
 
     {diffs, changes} =
-      check_efficiency(cursor, false, equalities, nil, safe_diff, 0, 0, 0, 0, edit_cost)
+      check_efficiency(cursor, false, equalities, nil, safe_diff, 0, 0, 0, 0, diff_edit_cost)
 
     if changes do
       cleanup_merge(diffs)
@@ -1388,7 +1388,7 @@ defmodule Diff do
   # `pre_del` 1 if there is a deletion operation before the last equality.
   # `post_ins` 1 if there is an insertion operation after the last equality.
   # `post_del` 1 if there is a deletion operation after the last equality.
-  # `edit_cost` Cost of an empty edit operation in terms of edit characters.
+  # `diff_edit_cost` Cost of an empty edit operation in terms of edit characters.
   def check_efficiency(
         %Cursor{current: this_diff} = diffs,
         changes,
@@ -1399,7 +1399,7 @@ defmodule Diff do
         pre_del,
         post_ins,
         post_del,
-        edit_cost
+        diff_edit_cost
       ) do
     if is_nil(this_diff) do
       {Cursor.to_list(diffs), changes}
@@ -1411,7 +1411,7 @@ defmodule Diff do
         if op == :equal do
           # Equality found.
           {equalities, last_equality, safe_diff, pre_ins, pre_del} =
-            if String.length(text) < edit_cost && (post_ins != 0 || post_del != 0) do
+            if String.length(text) < diff_edit_cost && (post_ins != 0 || post_del != 0) do
               # Candidate found.
               {:queue.cons(this_diff, equalities), text, safe_diff, post_ins, post_del}
             else
@@ -1440,7 +1440,7 @@ defmodule Diff do
 
           if !is_nil(last_equality) &&
                (ins_del_count == 4 ||
-                  (String.length(last_equality) * 2 < edit_cost && ins_del_count == 3)) do
+                  (String.length(last_equality) * 2 < diff_edit_cost && ins_del_count == 3)) do
             # Logger.debug("Splitting: '#{last_equality}'")
             # Walk back to offending equality.
             # Replace equality with a delete.
@@ -1498,7 +1498,7 @@ defmodule Diff do
         pre_del,
         post_ins,
         post_del,
-        edit_cost
+        diff_edit_cost
       )
     end
   end
@@ -1506,7 +1506,7 @@ defmodule Diff do
   @doc """
   Reorder and merge like edit sections.  Merge equalities.
   Any edit section can move as long as it doesn't cross an equality.
-  `diffs` - LinkedList of Diff objects.
+  `diffs` - list of Diff objects.
   """
   @spec cleanup_merge(difflist()) :: difflist()
   def cleanup_merge([]), do: []
@@ -1743,5 +1743,37 @@ defmodule Diff do
       {:equal, ""} -> Enum.drop(diffs, -1)
       _ -> diffs
     end
+  end
+
+  @doc """
+  Compute and return the source text (all equalities and deletions).
+  `diffs` List of Diff objects.
+  Returns source text.
+  """
+  @spec text1(difflist()) :: String.t()
+  def text1(diffs) do
+    Enum.reduce(diffs, "", fn {op, text}, acc ->
+      if op != :insert do
+        acc <> text
+      else
+        acc
+      end
+    end)
+  end
+
+  @doc """
+  Compute and return the destination text (all equalities and insertions).
+  `diffs` List of Diff objects.
+  Returns destination text.
+  """
+  @spec text2(difflist()) :: String.t()
+  def text2(diffs) do
+    Enum.reduce(diffs, "", fn {op, text}, acc ->
+      if op != :delete do
+        acc <> text
+      else
+        acc
+      end
+    end)
   end
 end
