@@ -1,4 +1,4 @@
-defmodule Cursor do
+defmodule Dmp.Cursor do
   @moduledoc """
   A container for Elixir lists, that can be used to iterate forward
   and backward, with a focused "current" item in the list, and "prev" and "next"
@@ -347,8 +347,11 @@ defmodule Cursor do
 
   ## Examples
 
-      iex> %Cursor{current: 1, next: [2, 3, 4, 5], prev: []} |> Cursor.move_forward()
-      %Cursor{current: 2, next: [3, 4, 5], prev: [1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_forward()
+      %Cursor{current: 4, next: [5], prev: [3, 2, 1]}
+
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_forward(2)
+      %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
 
       iex> Cursor.from_list([1, 2, 3, 4, 5]) |> Cursor.move_forward(3)
       %Cursor{current: 3, next: [4, 5], prev: [2, 1]}
@@ -386,7 +389,7 @@ defmodule Cursor do
           {next_cur, to_prev}
         end
 
-      %Cursor{prev: current_and_prev ++ to_prev, current: next_cur, next: next_next}
+      %Cursor{prev: to_prev ++ current_and_prev, current: next_cur, next: next_next}
     end
   end
 

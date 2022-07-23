@@ -1,4 +1,7 @@
 defmodule CursorTest do
   use ExUnit.Case
-  doctest Cursor
+
+  alias Dmp.Cursor
+
+  doctest Dmp.Cursor
 end

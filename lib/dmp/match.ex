@@ -1,13 +1,13 @@
-defmodule Match do
+defmodule Dmp.Match do
   @moduledoc """
   MATCH FUNCTIONS
   """
 
   use Bitwise, only_operators: true
 
-  import DiffMatchPatch
+  import Dmp.StringUtils
 
-  alias DiffMatchPatch.Options
+  alias Dmp.{Cursor, Options}
 
   @type options() :: Options.t()
 
@@ -23,7 +23,7 @@ defmodule Match do
   """
   @spec main(String.t(), String.t(), non_neg_integer(), nil | options()) :: integer()
   def main(text, pattern, loc, opts \\ nil) do
-    opts = opts || %Options{}
+    opts = opts || Options.default()
     match_threshold = Map.fetch!(opts, :match_threshold)
     match_distance = Map.fetch!(opts, :match_distance)
 

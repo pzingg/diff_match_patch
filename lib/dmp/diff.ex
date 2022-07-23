@@ -1,4 +1,4 @@
-defmodule Diff do
+defmodule Dmp.Diff do
   @moduledoc """
   DIFF FUNCTIONS
 
@@ -15,9 +15,9 @@ defmodule Diff do
   which means: delete "Hello", add "Goodbye" and keep " world."
   """
 
-  import DiffMatchPatch
+  import Dmp.StringUtils
 
-  alias DiffMatchPatch.Options
+  alias Dmp.{Cursor, Options}
 
   @type op() :: :delete | :insert | :equal
   @type t() :: {op(), String.t()}
@@ -40,7 +40,7 @@ defmodule Diff do
   """
   @spec main(String.t(), String.t(), boolean(), nil | options()) :: difflist()
   def main(text1, text2, checklines \\ true, opts \\ nil) do
-    opts = opts || %Options{}
+    opts = opts || Options.default()
 
     deadline =
       if opts.diff_timeout <= 0 do
@@ -123,11 +123,11 @@ defmodule Diff do
         [{:delete, text1}]
 
       true ->
-        {longtext, shorttext} =
+        {longtext, longtext_length, shorttext, shorttext_length} =
           if text1_length > text2_length do
-            {text1, text2}
+            {text1, text1_length, text2, text2_length}
           else
-            {text2, text1}
+            {text2, text2_length, text1, text1_length}
           end
 
         case String.split(longtext, shorttext, parts: 2) do
@@ -143,7 +143,7 @@ defmodule Diff do
             [{op, left}, {:equal, shorttext}, {op, right}]
 
           _notfound ->
-            if text1_length == 1 do
+            if shorttext_length == 1 do
               # Single character string.
               # After the previous speedup, the character can't be an equality.
               [{:delete, text1}, {:insert, text2}]

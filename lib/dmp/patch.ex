@@ -1,11 +1,11 @@
-defmodule Patch do
+defmodule Dmp.Patch do
   @moduledoc """
   PATCH FUNCTIONS
   """
 
-  import DiffMatchPatch
+  import Dmp.StringUtils
 
-  alias DiffMatchPatch.Options
+  alias Dmp.{Cursor, Diff, Options}
 
   alias __MODULE__
 
@@ -208,7 +208,7 @@ defmodule Patch do
   Returns list of Patch objects.
   """
   def from_texts(text1, text2, opts \\ nil) do
-    opts = opts || %Options{}
+    opts = opts || Options.default()
     diff_edit_cost = Map.fetch!(opts, :diff_edit_cost)
 
     # No diffs provided, compute our own.
@@ -255,7 +255,7 @@ defmodule Patch do
   def make(_text1, [], _opts), do: []
 
   def make(text1, diffs, opts) do
-    opts = opts || %Options{}
+    opts = opts || Options.default()
     patch_margin = Map.fetch!(opts, :patch_margin)
     match_max_bits = Map.fetch!(opts, :match_max_bits)
 
@@ -377,7 +377,7 @@ defmodule Patch do
   def apply([], text), do: {text, []}
 
   def apply(patches, text, opts \\ nil) do
-    opts = opts || %Options{}
+    opts = opts || Options.default()
     match_max_bits = Map.fetch!(opts, :match_max_bits)
     patch_margin = Map.fetch!(opts, :match_max_bits)
 
@@ -582,16 +582,16 @@ defmodule Patch do
           postcontext_length = String.length(postcontext)
           last_diff = List.last(patch.diffs)
 
-          last_diff =
+          patch_diffs =
             if !is_nil(last_diff) && elem(last_diff, 0) == :equal do
-              {:equal, elem(last_diff, 1) <> postcontext}
+              Enum.drop(patch.diffs, -1) ++ [{:equal, elem(last_diff, 1) <> postcontext}]
             else
-              {:equal, postcontext}
+              patch.diffs ++ [{:equal, postcontext}]
             end
 
           %Patch{
             patch
-            | diffs: Enum.drop(patch.diffs, -1) ++ [last_diff],
+            | diffs: patch_diffs,
               length1: patch.length1 + postcontext_length,
               length2: patch.length2 + postcontext_length
           }
@@ -655,7 +655,7 @@ defmodule Patch do
             {rest,
              %Patch{
                patch
-               | diffs: [{diff_type, diff_text} | patch.diffs],
+               | diffs: patch.diffs ++ [{diff_type, diff_text}],
                  length1: patch.length1 + diff_text_length
              }, start1 + diff_text_length, start2, false}
 
@@ -690,8 +690,8 @@ defmodule Patch do
                 [{first_op, first_text} | rest]
               end
 
-            {diffs, %Patch{patch | diffs: [{diff_type, diff_text}, patch.diffs]}, start1, start2,
-             empty}
+            {diffs, %Patch{patch | diffs: patch.diffs ++ [{diff_type, diff_text}]}, start1,
+             start2, empty}
         end
 
       {diffs, patch, start1, start2, empty}

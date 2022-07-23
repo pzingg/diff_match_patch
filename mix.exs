@@ -1,9 +1,9 @@
-defmodule DiffMatchPatch.MixProject do
+defmodule Dmp.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :diff_match_patch,
+      app: :dmp,
       version: "0.1.0",
       elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
