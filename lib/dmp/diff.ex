@@ -24,6 +24,12 @@ defmodule Dmp.Diff do
   @type difflist() :: list(t())
   @type options() :: Options.t()
 
+  @type munge_line_hash() :: %{String.t() => non_neg_integer()}
+  @type munge_line_acc() ::
+          {munge_line_hash(), list(String.t()), nil | list(non_neg_integer()),
+           nil | non_neg_integer()}
+  @type munge_line_result() :: {munge_line_hash(), list(String.t()), String.t()}
+
   @typedoc """
   The result of a successful `half_match` call.
   A tuple of five strings:
@@ -135,23 +141,16 @@ defmodule Dmp.Diff do
         [{:delete, text1}]
 
       true ->
-        {longtext, shorttext, longtext_length, shorttext_length} =
+        {longtext, shorttext, shorttext_length, op} =
           if text1_length > text2_length do
-            {text1, text2, text1_length, text2_length}
+            {text1, text2, text2_length, :delete}
           else
-            {text2, text1, text2_length, text1_length}
+            {text2, text1, text1_length, :insert}
           end
 
         case String.split(longtext, shorttext, parts: 2) do
           [left, right] ->
             # Shorter text is inside the longer text (speedup).
-            op =
-              if text1_length > text2_length do
-                :delete
-              else
-                :insert
-              end
-
             [{op, left}, {:equal, shorttext}, {op, right}]
 
           _notfound ->
@@ -624,38 +623,72 @@ defmodule Dmp.Diff do
 
     # "\x00" is a valid character, but various debuggers don't like it.
     # So we'll insert a junk entry in line_array to avoid generating a null character.
+    # Bail out at 55_295 because to_string([55_296]) raises "invalid code point 55296"
     # Allocate 2/3rds of the space for text1, the rest for text2.
-    {chars1, line_array, line_hash} = lines_to_chars_munge(text1, [""], %{}, 40000)
-    {chars2, line_array, _line_hash} = lines_to_chars_munge(text2, line_array, line_hash, 65535)
+    {line_hash, line_array, chars1} = lines_to_chars_munge(text1, {%{}, [""], nil, nil}, 37_000)
+
+    {_line_hash, line_array, chars2} =
+      lines_to_chars_munge(text2, {line_hash, line_array, nil, nil}, 55_295)
+
     {chars1, chars2, line_array}
+  end
+
+  defp pop_line(text) do
+    case String.split(text, "\n", parts: 2) do
+      [line] ->
+        {line, ""}
+
+      [line, rest] ->
+        {line <> "\n", rest}
+
+      _ ->
+        raise "pop_line error"
+    end
   end
 
   @spec lines_to_chars_munge(
           String.t(),
-          list(String.t()),
-          %{String.t() => non_neg_integer()},
+          munge_line_acc(),
           non_neg_integer()
-        ) :: {String.t(), list(String.t()), %{String.t() => non_neg_integer()}}
-  def lines_to_chars_munge(text, line_array, line_hash, max_lines) do
-    # Walk the text, pulling out a substring for each line.
-    {chars, line_array, line_hash} =
-      Enum.reduce_while(String.split(text, "/n"), {[], line_array, line_hash}, fn line,
-                                                                                  {chars, arr, h} ->
-        if Map.has_key?(h, line) do
-          val = Map.get(h, line)
-          {:cont, {[val | chars], arr, h}}
-        else
-          if Enum.count(arr) == max_lines do
-            # Bail out
-            {:halt, {chars, arr, h}}
-          else
-            val = Enum.count(line_array)
-            {:cont, {[val | chars], arr ++ [line], Map.put(h, line, val)}}
-          end
-        end
-      end)
+        ) :: munge_line_result()
+  # Verified tail-recursive
+  # Case 1. Initial text is ""
+  def lines_to_chars_munge("", {h, arr, nil, _}, _max_lines) do
+    {h, arr, ""}
+  end
 
-    {Enum.reverse(chars) |> List.to_string(), line_array, line_hash}
+  # Case 2. No more text, or overflowed max_lines
+  def lines_to_chars_munge("", {h, arr, chars, _}, _max_lines) do
+    {h, Enum.reverse(arr), Enum.reverse(chars) |> List.to_string()}
+  end
+
+  # Case 3. Process one line of text and recurse
+  def lines_to_chars_munge(text, {h, arr, chars, next_val}, max_lines) do
+    # First time if chars == nil
+    {arr, chars, next_val} =
+      if is_nil(chars) do
+        {Enum.reverse(arr), [], Enum.count(arr)}
+      else
+        {arr, chars, next_val}
+      end
+
+    {line, rest} = pop_line(text)
+
+    {rest, {h, arr, chars, next_val}} =
+      cond do
+        Map.has_key?(h, line) ->
+          val = Map.get(h, line)
+          {rest, {h, arr, [val | chars], next_val}}
+
+        next_val < max_lines ->
+          {rest, {Map.put(h, line, next_val), [line | arr], [next_val | chars], next_val + 1}}
+
+        true ->
+          # Bail out
+          {"", {h, arr, chars, next_val}}
+      end
+
+    lines_to_chars_munge(rest, {h, arr, chars, next_val}, max_lines)
   end
 
   @doc """
@@ -1532,139 +1565,149 @@ defmodule Dmp.Diff do
     # Add a dummy entry at the end
     diffs = diffs ++ [{:equal, ""}]
 
-    Cursor.from_list(diffs, position: :second)
-    |> check_first_pass(0, 0, "", "", nil)
-    |> remove_dummy()
+    diffs =
+      Cursor.from_list(diffs, position: :first)
+      |> check_first_pass({0, 0, "", "", nil})
+      |> remove_dummy()
+
+    IO.inspect(diffs, label: "first pass done")
+    diffs
   end
 
-  @spec check_first_pass(
-          Cursor.t(),
-          non_neg_integer(),
-          non_neg_integer(),
-          String.t(),
-          String.t(),
-          nil | t()
-        ) :: difflist()
+  # Extract text for prefix and suffix from prev_diff and next_diff
+  defp undiff({op, text}), do: {op, text}
+  defp undiff(_), do: {:equal, ""}
+
+  @type first_pass_acc() ::
+          {non_neg_integer(), non_neg_integer(), String.t(), String.t(), nil | t()}
+
+  @spec check_first_pass(Cursor.t(), first_pass_acc()) :: difflist()
+  defp check_first_pass(%Cursor{current: nil} = diffs, _acc), do: Cursor.to_list(diffs)
+
   defp check_first_pass(
          %Cursor{} = diffs,
-         count_delete,
-         count_insert,
-         text_delete,
-         text_insert,
-         prev_equal
+         {count_delete, count_insert, text_delete, text_insert, prev_equal}
        ) do
-    {prev_diff, this_diff, _next_diff} = Cursor.get(diffs)
+    {prev_diff, this_diff, next_diff} = state = Cursor.get(diffs)
+    IO.inspect(state, label: "first_pass")
 
-    if is_nil(prev_diff) || is_nil(this_diff) do
-      Cursor.to_list(diffs)
-    else
-      {_prev_op, prev_text} = prev_diff
-      {op, text} = this_diff
+    {op, text} = this_diff
 
-      {cursor, count_delete, count_insert, text_delete, text_insert, prev_equal} =
-        case op do
-          :insert ->
-            {diffs, count_delete, count_insert + 1, text_delete, text_insert <> text, nil}
+    {cursor, count_delete, count_insert, text_delete, text_insert, prev_equal} =
+      case op do
+        :insert ->
+          {diffs, count_delete, count_insert + 1, text_delete, text_insert <> text, nil}
 
-          :delete ->
-            {diffs, count_delete + 1, count_insert, text_delete <> text, text_insert, nil}
+        :delete ->
+          {diffs, count_delete + 1, count_insert, text_delete <> text, text_insert, nil}
 
-          :equal ->
-            # Upon reaching an equality, check for prior redundancies.
-            cursor =
-              if count_delete + count_insert > 1 do
-                # Delete the offending records
-                diffs = Cursor.delete_before(diffs, count_delete + count_insert)
-                {prev_diff, this_diff, next_diff} = Cursor.get(diffs)
-                {_op, _text} = this_diff
+        :equal ->
+          # Upon reaching an equality, check for prior redundancies.
+          cursor =
+            if count_delete + count_insert > 1 do
+              # Delete the offending records
+              diffs = Cursor.delete_before(diffs, count_delete + count_insert)
+              IO.inspect(diffs, label: "prev #{count_delete + count_insert} diffs removed")
+              {prev_diff, this_diff, _} = Cursor.get(diffs)
 
-                {cursor, text_insert, text_delete} =
-                  if count_delete > 0 && count_insert > 0 do
-                    # Both types.
-                    # Factor out any common prefixes.
-                    {prefix, text1, text2} = common_prefix(text_insert, text_delete)
+              {diffs, text_insert, text_delete} =
+                if count_delete > 0 && count_insert > 0 do
+                  # Both types.
+                  # Factor out any common prefixes.
+                  {prefix, text1, text2} = common_prefix(text_insert, text_delete)
+                  IO.puts("both types")
 
-                    {diffs, text_insert, text_delete} =
-                      if prefix != "" do
-                        diffs1 =
-                          if !is_nil(prev_diff) do
-                            {prev_op, prev_text} = prev_diff
+                  {diffs, text_insert, text_delete} =
+                    if prefix != "" do
+                      {prev_op, prev_text} = undiff(prev_diff)
 
-                            if prev_op != :equal do
-                              raise "Previous diff should have been an equality."
-                            end
-
-                            diffs
-                            |> Cursor.delete(1)
-                            |> Cursor.insert([{:equal, prev_text <> prefix}])
-                          else
-                            diffs
-                            |> Cursor.insert([{:equal, prefix}])
-                          end
-
-                        {diffs1, text1, text2}
-                      else
-                        {diffs, text_insert, text_delete}
+                      if !is_nil(prev_diff) && prev_op != :equal do
+                        raise "Previous diff should have been an equality."
                       end
-
-                    # Factor out any common suffixes.
-                    {suffix, text1, text2} = common_suffix(text_insert, text_delete)
-
-                    if suffix != "" do
-                      {_next_op, next_text} = next_diff
 
                       diffs1 =
                         diffs
+                        |> Cursor.move_back(1)
                         |> Cursor.delete(1)
-                        |> Cursor.insert([{:equal, suffix <> next_text}])
+                        |> Cursor.insert([{:equal, prev_text <> prefix}])
 
+                      IO.inspect(diffs1, label: "prefix #{prefix} factored out")
                       {diffs1, text1, text2}
                     else
                       {diffs, text_insert, text_delete}
                     end
-                  end
 
-                # Insert the merged records.
-                cursor =
-                  if text_delete != "" do
-                    Cursor.insert(cursor, [{:delete, text_delete}])
+                  # Factor out any common suffixes.
+                  {suffix, text1, text2} = common_suffix(text_insert, text_delete)
+
+                  if suffix != "" do
+                    {_, next_text} = undiff(next_diff)
+
+                    diffs1 =
+                      diffs
+                      |> Cursor.delete(1)
+                      |> Cursor.insert([{:equal, suffix <> next_text}])
+
+                    IO.inspect(diffs1, label: "suffix #{suffix} factored out")
+                    {diffs1, text1, text2}
                   else
-                    cursor
+                    {diffs, text_insert, text_delete}
                   end
-
-                if text_insert != "" do
-                  Cursor.insert(cursor, [{:insert, text_insert}])
                 else
-                  cursor
+                  {diffs, text_insert, text_delete}
                 end
-              else
-                if !is_nil(prev_equal) do
-                  if prev_equal != prev_diff do
-                    raise "prev_equal mismatch"
-                  end
 
-                  # Merge this equality with the previous one.
+              # Delete the offending records
+              diffs = Cursor.delete_before(diffs, count_delete + count_insert)
+              IO.inspect(diffs, label: "prev #{count_delete + count_insert} diffs removed")
+
+              # Insert the merged records.
+              diffs =
+                if text_delete != "" do
+                  Cursor.insert_before(diffs, [{:delete, text_delete}])
+                else
+                  diffs
+                end
+
+              diffs =
+                if text_insert != "" do
+                  Cursor.insert_before(diffs, [{:insert, text_insert}])
+                else
+                  diffs
+                end
+
+              IO.inspect(diffs, label: "after inserting merged records")
+              diffs
+            else
+              if !is_nil(prev_equal) do
+                if prev_equal != prev_diff do
+                  raise "prev_equal mismatch"
+                end
+
+                {_, prev_text} = undiff(prev_diff)
+
+                # Merge this equality with the previous one.
+                diffs =
                   diffs
                   |> Cursor.move_back(1)
-                  |> Cursor.delete(1)
+                  |> Cursor.delete(2)
                   |> Cursor.insert([{:equal, prev_text <> text}])
-                else
-                  diffs
-                end
+
+                IO.inspect(diffs, label: "after merge prev equality")
+                diffs
+              else
+                IO.puts("equal no op")
+                diffs
               end
+            end
 
-            {Cursor.move_forward(cursor), 0, 0, "", "", this_diff}
-        end
+          %Cursor{current: this_diff} = cursor
+          {cursor, 0, 0, "", "", this_diff}
+      end
 
-      check_first_pass(
-        cursor,
-        count_delete,
-        count_insert,
-        text_delete,
-        text_insert,
-        prev_equal
-      )
-    end
+    cursor
+    |> Cursor.move_forward()
+    |> check_first_pass({count_delete, count_insert, text_delete, text_insert, prev_equal})
   end
 
   # Second pass: look for single edits surrounded on both sides by equalities
