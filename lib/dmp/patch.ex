@@ -259,99 +259,10 @@ defmodule Dmp.Patch do
     patch_margin = Map.fetch!(opts, :patch_margin)
     match_max_bits = Map.fetch!(opts, :match_max_bits)
 
-    # Start with text1 (prepatch_text) and apply the diffs until we arrive at
-    # text2 (postpatch_text). We recreate the patches one by one to determine
-    # context info.
-    acc0 = {[], %Patch{}, text1, text1, 0, 0, List.last(diffs)}
-
-    # `char_count1` Number of characters into the text1 string.
-    # `char_count2` Number of characters into the text2 string.
-    {patches, patch, prepatch_text, _postpatch_text, _char_count1, _char_count2, _last_diff} =
-      Enum.reduce(diffs, acc0, fn diff,
-                                  {patches, patch, prepatch_text, postpatch_text, char_count1,
-                                   char_count2, last_diff} ->
-        {op, text} = diff
-
-        patch =
-          if patch.diffs == [] && op != :equal do
-            # A new patch starts here.
-            %Patch{patch | start1: char_count1, start2: char_count2}
-          else
-            patch
-          end
-
-        text_length = String.length(text)
-
-        {patches, patch, prepatch_text, postpatch_text, char_count1} =
-          case op do
-            :insert ->
-              {patches,
-               %Patch{patch | diffs: patch.diffs ++ [diff], length2: patch.length2 + text_length},
-               prepatch_text,
-               substring(postpatch_text, 0, char_count2) <>
-                 text <> substring(postpatch_text, char_count2), char_count1}
-
-            :delete ->
-              {patches,
-               %Patch{patch | diffs: patch.diffs ++ [diff], length1: patch.length1 + text_length},
-               prepatch_text,
-               substring(postpatch_text, 0, char_count2) <>
-                 substring(postpatch_text, char_count2 + text_length), char_count1}
-
-            :equal ->
-              patch =
-                if text_length <= 2 * patch_margin &&
-                     patch.diffs != [] && diff != last_diff do
-                  # Small equality inside a patch.
-                  %Patch{
-                    patch
-                    | diffs: patch.diffs ++ [diff],
-                      length1: patch.length1 + text_length,
-                      length2: patch.length2 + text_length
-                  }
-                else
-                  patch
-                end
-
-              if text_length >= 2 * patch_margin && diffs != [] do
-                # Time for a new patch.
-                if diffs != [] do
-                  patch = add_context(patch, prepatch_text, patch_margin, match_max_bits)
-
-                  {
-                    patches ++ [patch],
-                    %Patch{},
-                    # Unlike Unidiff, our patch lists have a rolling context.
-                    # https://github.com/google/diff-match-patch/wiki/Unidiff
-                    # Update prepatch text & pos to reflect the application of the
-                    # just completed patch.
-                    prepatch_text,
-                    postpatch_text,
-                    char_count2
-                  }
-                else
-                  {patches, patch, prepatch_text, postpatch_text, char_count1}
-                end
-              else
-                {patches, patch, prepatch_text, postpatch_text, char_count1}
-              end
-          end
-
-        # Update the current character count.
-        {char_count1, char_count2} =
-          case op do
-            :insert ->
-              {char_count1, char_count2 + text_length}
-
-            :delete ->
-              {char_count1 + text_length, char_count2}
-
-            :equal ->
-              {char_count1 + text_length, char_count2 + text_length}
-          end
-
-        {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2, last_diff}
-      end)
+    {patches, patch, prepatch_text} =
+      diffs
+      |> Cursor.from_list(position: :first)
+      |> make_loop({[], %Patch{}, text1, text1, 0, 0}, patch_margin, match_max_bits)
 
     if patch.diffs != [] do
       # Pick up the leftover patch if not empty.
@@ -360,6 +271,114 @@ defmodule Dmp.Patch do
     else
       patches
     end
+  end
+
+  # Verified tail-recursive
+  def make_loop(
+        %Cursor{current: nil},
+        {patches, patch, prepatch_text, _postpatch_text, _char_count1, _char_count2},
+        _patch_margin,
+        _match_max_bits
+      ) do
+    {patches, patch, prepatch_text}
+  end
+
+  # Start with text1 (prepatch_text) and apply the diffs until we arrive at
+  # text2 (postpatch_text). We recreate the patches one by one to determine
+  # context info.
+  # `char_count1` Number of characters into the text1 string.
+  # `char_count2` Number of characters into the text2 string.
+  def make_loop(
+        %Cursor{current: {op, text} = diff} = diffs,
+        {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2},
+        patch_margin,
+        match_max_bits
+      ) do
+    patch =
+      if patch.diffs == [] && op != :equal do
+        # A new patch starts here.
+        %Patch{patch | start1: char_count1, start2: char_count2}
+      else
+        patch
+      end
+
+    text_length = String.length(text)
+
+    {patches, patch, prepatch_text, postpatch_text, char_count1} =
+      case op do
+        :insert ->
+          {patches,
+           %Patch{patch | diffs: patch.diffs ++ [diff], length2: patch.length2 + text_length},
+           prepatch_text,
+           substring(postpatch_text, 0, char_count2) <>
+             text <> substring(postpatch_text, char_count2), char_count1}
+
+        :delete ->
+          {patches,
+           %Patch{patch | diffs: patch.diffs ++ [diff], length1: patch.length1 + text_length},
+           prepatch_text,
+           substring(postpatch_text, 0, char_count2) <>
+             substring(postpatch_text, char_count2 + text_length), char_count1}
+
+        :equal ->
+          patch =
+            if text_length <= 2 * patch_margin &&
+                 patch.diffs != [] && Cursor.has_next?(diffs) do
+              # Small equality inside a patch.
+              %Patch{
+                patch
+                | diffs: patch.diffs ++ [diff],
+                  length1: patch.length1 + text_length,
+                  length2: patch.length2 + text_length
+              }
+            else
+              patch
+            end
+
+          if text_length >= 2 * patch_margin && diffs != [] do
+            # Time for a new patch.
+            if diffs != [] do
+              patch = add_context(patch, prepatch_text, patch_margin, match_max_bits)
+
+              {
+                patches ++ [patch],
+                %Patch{},
+                # Unlike Unidiff, our patch lists have a rolling context.
+                # https://github.com/google/diff-match-patch/wiki/Unidiff
+                # Update prepatch text & pos to reflect the application of the
+                # just completed patch.
+                prepatch_text,
+                postpatch_text,
+                char_count2
+              }
+            else
+              {patches, patch, prepatch_text, postpatch_text, char_count1}
+            end
+          else
+            {patches, patch, prepatch_text, postpatch_text, char_count1}
+          end
+      end
+
+    # Update the current character count.
+    {char_count1, char_count2} =
+      case op do
+        :insert ->
+          {char_count1, char_count2 + text_length}
+
+        :delete ->
+          {char_count1 + text_length, char_count2}
+
+        :equal ->
+          {char_count1 + text_length, char_count2 + text_length}
+      end
+
+    diffs
+    |> Cursor.move_forward()
+    |> make_loop(
+      {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2},
+      patch_margin,
+      match_max_bits
+    )
   end
 
   @doc """
