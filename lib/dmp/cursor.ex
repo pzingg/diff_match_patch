@@ -613,4 +613,20 @@ defmodule Dmp.Cursor do
   def insert_before(%Cursor{prev: prev} = c, items) when is_list(items) do
     %Cursor{c | prev: Enum.reverse(items) ++ prev}
   end
+
+  @doc """
+  Insert items at the Cursor's head position, leaving the current position pointer alone.
+
+  ## Examples
+
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.insert_at_head([10, 11])
+      %Cursor{current: 3, next: [4, 5], prev: [2, 1, 11, 10]}
+
+  """
+  @spec insert_at_head(t(), list()) :: t()
+  def insert_at_head(%Cursor{} = c, []), do: c
+
+  def insert_at_head(%Cursor{prev: prev} = c, items) when is_list(items) do
+    %Cursor{c | prev: prev ++ Enum.reverse(items)}
+  end
 end

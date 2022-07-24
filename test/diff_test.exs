@@ -222,11 +222,55 @@ defmodule DiffTest do
       assert [{:delete, "ac"}, {:insert, "bd"}, {:equal, "ef"}] == Diff.cleanup_merge(diffs)
     end
 
+    @tag :good
     test "prefix and suffix detection" do
       diffs = [{:delete, "a"}, {:insert, "abc"}, {:delete, "dc"}]
 
       assert [{:equal, "a"}, {:delete, "d"}, {:insert, "b"}, {:equal, "c"}] ==
                Diff.cleanup_merge(diffs)
+    end
+
+    test "prefix and suffix detection with equalities" do
+      diffs = [{:equal, "x"}, {:delete, "a"}, {:insert, "abc"}, {:delete, "dc"}, {:equal, "y"}]
+
+      assert [{:equal, "xa"}, {:delete, "d"}, {:insert, "b"}, {:equal, "cy"}] ==
+               Diff.cleanup_merge(diffs)
+    end
+
+    @tag :skip
+    test "slide edit left" do
+      diffs = [{:equal, "a"}, {:insert, "ba"}, {:equal, "c"}]
+      assert [{:insert, "ab"}, {:equal, "ac"}] == Diff.cleanup_merge(diffs)
+    end
+
+    @tag :skip
+    test "slide edit right" do
+      diffs = [{:equal, "c"}, {:insert, "ab"}, {:equal, "a"}]
+      assert [{:equal, "ca"}, {:insert, "ba"}] == Diff.cleanup_merge(diffs)
+    end
+
+    @tag :skip
+    test "slide edit left recursive" do
+      diffs = [{:equal, "a"}, {:delete, "b"}, {:equal, "c"}, {:delete, "ac"}, {:equal, "x"}]
+      assert [{:delete, "abc"}, {:equal, "acx"}] == Diff.cleanup_merge(diffs)
+    end
+
+    @tag :skip
+    test "slide edit right recursive" do
+      diffs = [{:equal, "x"}, {:delete, "ca"}, {:equal, "c"}, {:delete, "b"}, {:equal, "a"}]
+      assert [{:equal, "xca"}, {:delete, "cba"}] == Diff.cleanup_merge(diffs)
+    end
+
+    @tag :skip
+    test "empty merge" do
+      diffs = [{:delete, "b"}, {:insert, "ab"}, {:equal, "c"}]
+      assert [{:insert, "a"}, {:equal, "bc"}] == Diff.cleanup_merge(diffs)
+    end
+
+    @tag :skip
+    test "empty equality" do
+      diffs = [{:equal, ""}, {:insert, "a"}, {:equal, "b"}]
+      assert [{:insert, "a"}, {:equal, "b"}] == Diff.cleanup_merge(diffs)
     end
   end
 end

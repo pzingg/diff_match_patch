@@ -1589,7 +1589,7 @@ defmodule Dmp.Diff do
          {count_delete, count_insert, text_delete, text_insert, prev_equal}
        ) do
     {prev_diff, this_diff, next_diff} = state = Cursor.get(diffs)
-    IO.inspect(state, label: "first_pass")
+    IO.inspect({prev_diff, this_diff, next_diff, text_delete, text_insert}, label: "first_pass")
 
     {op, text} = this_diff
 
@@ -1608,7 +1608,6 @@ defmodule Dmp.Diff do
               # Delete the offending records
               diffs = Cursor.delete_before(diffs, count_delete + count_insert)
               IO.inspect(diffs, label: "prev #{count_delete + count_insert} diffs removed")
-              {prev_diff, this_diff, _} = Cursor.get(diffs)
 
               {diffs, text_insert, text_delete} =
                 if count_delete > 0 && count_insert > 0 do
@@ -1619,17 +1618,29 @@ defmodule Dmp.Diff do
 
                   {diffs, text_insert, text_delete} =
                     if prefix != "" do
-                      {prev_op, prev_text} = undiff(prev_diff)
-
-                      if !is_nil(prev_diff) && prev_op != :equal do
-                        raise "Previous diff should have been an equality."
-                      end
+                      {prev_diff, _, _} = Cursor.get(diffs)
 
                       diffs1 =
-                        diffs
-                        |> Cursor.move_back(1)
-                        |> Cursor.delete(1)
-                        |> Cursor.insert([{:equal, prev_text <> prefix}])
+                        if !is_nil(prev_diff) do
+                          {prev_op, prev_text} = undiff(prev_diff)
+
+                          if prev_op != :equal do
+                            raise "Previous diff should have been an equality."
+                          end
+
+                          IO.puts("merge from prev_diff")
+
+                          diffs
+                          |> Cursor.move_back(1)
+                          |> Cursor.delete(1)
+                          |> Cursor.insert([{prev_op, prev_text <> prefix}])
+                          |> Cursor.move_forward(1)
+                        else
+                          IO.puts("insert at head")
+
+                          diffs
+                          |> Cursor.insert_at_head([{:equal, prefix}])
+                        end
 
                       IO.inspect(diffs1, label: "prefix #{prefix} factored out")
                       {diffs1, text1, text2}
@@ -1645,8 +1656,9 @@ defmodule Dmp.Diff do
 
                     diffs1 =
                       diffs
-                      |> Cursor.delete(1)
+                      |> Cursor.move_forward(1)
                       |> Cursor.insert([{:equal, suffix <> next_text}])
+                      |> Cursor.move_back(1)
 
                     IO.inspect(diffs1, label: "suffix #{suffix} factored out")
                     {diffs1, text1, text2}
@@ -1656,10 +1668,6 @@ defmodule Dmp.Diff do
                 else
                   {diffs, text_insert, text_delete}
                 end
-
-              # Delete the offending records
-              diffs = Cursor.delete_before(diffs, count_delete + count_insert)
-              IO.inspect(diffs, label: "prev #{count_delete + count_insert} diffs removed")
 
               # Insert the merged records.
               diffs =
