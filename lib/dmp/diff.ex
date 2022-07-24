@@ -1195,95 +1195,108 @@ defmodule Dmp.Diff do
     end
   end
 
-  # Look for single edits surrounded on both sides by equalities
-  # which can be shifted sideways to align the edit to a word boundary.
-  # e.g: The c<ins>at c</ins>ame. -> The <ins>cat </ins>came.
-  # `diffs` list of Diff objects.
-  @spec cleanup_semantic_lossless(Cursor.t()) :: difflist()
-  defp cleanup_semantic_lossless(%Cursor{} = diffs) do
-    {prev_diff, this_diff, next_diff} = Cursor.get(diffs)
+  @doc """
+  Look for single edits surrounded on both sides by equalities
+  which can be shifted sideways to align the edit to a word boundary.
+  e.g: The c<ins>at c</ins>ame. -> The <ins>cat </ins>came.
 
+  `diffs` list of Diff objects.
+  """
+  @spec cleanup_semantic_lossless(difflist()) :: difflist()
+  def cleanup_semantic_lossless(diffs) do
     # Intentionally ignore the first and last element (don't need checking).
-    if is_nil(prev_diff) || is_nil(next_diff) do
-      Cursor.to_list(diffs)
-    else
-      {prev_op, prev_text} = prev_diff
-      {next_op, next_text} = next_diff
+    diffs
+    |> Cursor.from_list(position: :second)
+    |> cleanup_semantic_lossless_loop()
+  end
 
-      cursor =
-        if prev_op == :equal && next_op == :equal do
-          # This is a single edit surrounded by equalities.
-          equality1 = prev_text
-          {op, edit} = this_diff
-          equality2 = next_text
+  @spec cleanup_semantic_lossless_loop(Cursor.t()) :: difflist()
+  # Verified tail-recursive
+  # Intentionally ignore the first and last element (don't need checking).
+  defp cleanup_semantic_lossless_loop(%Cursor{next: []} = diffs) do
+    Cursor.to_list(diffs)
+  end
 
-          # First, shift the edit as far left as possible.
-          {suffix, text1, text2} = common_suffix(equality1, edit)
+  defp cleanup_semantic_lossless_loop(%Cursor{} = diffs) do
+    {prev_diff, this_diff, next_diff} = Cursor.get(diffs)
+    {prev_op, prev_text} = prev_diff
+    {next_op, next_text} = next_diff
 
-          {equality1, edit, equality2} =
-            if suffix != "" do
-              {text1, text2, suffix <> equality2}
-            else
-              {equality1, edit, equality2}
-            end
+    cursor =
+      if prev_op == :equal && next_op == :equal do
+        # This is a single edit surrounded by equalities.
+        equality1 = prev_text
+        {op, edit} = this_diff
+        equality2 = next_text
 
-          # Second, step character by character right, looking for the best fit.
-          best_equality1 = equality1
-          best_edit = edit
-          best_equality2 = equality2
+        # First, shift the edit as far left as possible.
+        {suffix, text1, text2} = common_suffix(equality1, edit)
 
-          best_score =
-            cleanup_semantic_score(equality1, edit) + cleanup_semantic_score(edit, equality2)
-
-          {best_equality1, best_edit, best_equality2} =
-            get_best_score(
-              equality1,
-              edit,
-              equality2,
-              best_equality1,
-              best_edit,
-              best_equality2,
-              best_score
-            )
-
-          if prev_text != best_equality1 do
-            # We have an improvement, save it back to the diff.
-            if best_equality1 != "" do
-              # Update prev_diff.
-              diffs
-              |> Cursor.delete_before(1)
-              |> Cursor.insert_before([{prev_op, best_equality1}])
-            else
-              # Delete prev_diff.
-              Cursor.delete_before(diffs, 1)
-            end
-
-            # Update this_diff.
-            diffs =
-              diffs
-              |> Cursor.delete(1)
-              |> Cursor.insert_before([{op, best_edit}])
-
-            # Now pointing at next_diff
-
-            if best_equality2 != "" do
-              # Update next_diff
-              diffs
-              |> Cursor.delete(1)
-              |> Cursor.insert_before([{next_op, best_equality2}])
-            else
-              # Delete next_diff
-              Cursor.delete(diffs, 1)
-            end
+        {equality1, edit, equality2} =
+          if suffix != "" do
+            {text1, text2, suffix <> equality2}
           else
-            Cursor.move_forward(diffs)
+            {equality1, edit, equality2}
+          end
+
+        # Second, step character by character right, looking for the best fit.
+        best_equality1 = equality1
+        best_edit = edit
+        best_equality2 = equality2
+
+        best_score =
+          cleanup_semantic_score(equality1, edit) + cleanup_semantic_score(edit, equality2)
+
+        {best_equality1, best_edit, best_equality2} =
+          get_best_score(
+            equality1,
+            edit,
+            equality2,
+            best_equality1,
+            best_edit,
+            best_equality2,
+            best_score
+          )
+
+        if prev_text != best_equality1 do
+          # We have an improvement, save it back to the diff.
+          if best_equality1 != "" do
+            # Update prev_diff.
+            diffs
+            |> Cursor.delete_before(1)
+            |> Cursor.insert_before([{prev_op, best_equality1}])
+          else
+            # Delete prev_diff.
+            Cursor.delete_before(diffs, 1)
+          end
+
+          # Update this_diff.
+          diffs =
+            diffs
+            |> Cursor.delete(1)
+            |> Cursor.insert_before([{op, best_edit}])
+
+          # Now pointing at next_diff
+
+          if best_equality2 != "" do
+            # Update next_diff
+            diffs
+            |> Cursor.delete(1)
+            |> Cursor.insert_before([{next_op, best_equality2}])
+          else
+            # Delete next_diff
+            Cursor.delete(diffs, 1)
           end
         else
-          Cursor.move_forward(diffs)
+          diffs
         end
+      else
+        diffs
+      end
 
-      cleanup_semantic_lossless(cursor)
-    end
+    diffs
+    |> Cursor.move_forward()
+    |> cleanup_semantic_lossless_loop()
   end
 
   @spec get_best_score(
@@ -1567,10 +1580,10 @@ defmodule Dmp.Diff do
 
     diffs =
       Cursor.from_list(diffs, position: :first)
-      |> check_first_pass({0, 0, "", "", nil})
-      |> remove_dummy()
+      |> first_pass_loop({0, 0, "", ""})
 
-    IO.inspect(diffs, label: "first pass done")
+    diffs = remove_dummy(diffs)
+    # DEBUG_CLEANUP_MERGE IO.inspect(diffs, label: "first pass done")
     diffs
   end
 
@@ -1579,27 +1592,29 @@ defmodule Dmp.Diff do
   defp undiff(_), do: {:equal, ""}
 
   @type first_pass_acc() ::
-          {non_neg_integer(), non_neg_integer(), String.t(), String.t(), nil | t()}
+          {non_neg_integer(), non_neg_integer(), String.t(), String.t()}
 
-  @spec check_first_pass(Cursor.t(), first_pass_acc()) :: difflist()
-  defp check_first_pass(%Cursor{current: nil} = diffs, _acc), do: Cursor.to_list(diffs)
+  @spec first_pass_loop(Cursor.t(), first_pass_acc()) :: difflist()
+  # Verified tail-recursive
+  defp first_pass_loop(%Cursor{current: nil} = diffs, _acc), do: Cursor.to_list(diffs)
 
-  defp check_first_pass(
+  defp first_pass_loop(
          %Cursor{} = diffs,
-         {count_delete, count_insert, text_delete, text_insert, prev_equal}
+         {count_delete, count_insert, text_delete, text_insert}
        ) do
-    {prev_diff, this_diff, next_diff} = state = Cursor.get(diffs)
-    IO.inspect({prev_diff, this_diff, next_diff, text_delete, text_insert}, label: "first_pass")
+    {prev_diff, this_diff, _next_diff} = Cursor.get(diffs)
+    # DEBUG_CLEANUP_MERGE IO.inspect(diffs, label: "first_pass")
+    # DEBUG_CLEANUP_MERGE IO.inspect({text_delete, text_insert}, label: "ins del text")
 
     {op, text} = this_diff
 
-    {cursor, count_delete, count_insert, text_delete, text_insert, prev_equal} =
+    {cursor, count_delete, count_insert, text_delete, text_insert} =
       case op do
         :insert ->
-          {diffs, count_delete, count_insert + 1, text_delete, text_insert <> text, nil}
+          {diffs, count_delete, count_insert + 1, text_delete, text_insert <> text}
 
         :delete ->
-          {diffs, count_delete + 1, count_insert, text_delete <> text, text_insert, nil}
+          {diffs, count_delete + 1, count_insert, text_delete <> text, text_insert}
 
         :equal ->
           # Upon reaching an equality, check for prior redundancies.
@@ -1607,14 +1622,15 @@ defmodule Dmp.Diff do
             if count_delete + count_insert > 1 do
               # Delete the offending records
               diffs = Cursor.delete_before(diffs, count_delete + count_insert)
-              IO.inspect(diffs, label: "prev #{count_delete + count_insert} diffs removed")
+
+              # DEBUG_CLEANUP_MERGE IO.inspect(diffs, label: "prev #{count_delete + count_insert} diffs removed")
 
               {diffs, text_insert, text_delete} =
                 if count_delete > 0 && count_insert > 0 do
                   # Both types.
                   # Factor out any common prefixes.
                   {prefix, text1, text2} = common_prefix(text_insert, text_delete)
-                  IO.puts("both types")
+                  # DEBUG_CLEANUP_MERGE IO.puts("both types")
 
                   {diffs, text_insert, text_delete} =
                     if prefix != "" do
@@ -1628,21 +1644,21 @@ defmodule Dmp.Diff do
                             raise "Previous diff should have been an equality."
                           end
 
-                          IO.puts("merge from prev_diff")
+                          new_prev = {:equal, prev_text <> prefix}
+                          # DEBUG_CLEANUP_MERGE IO.inspect(new_prev, label: "replace at prev")
 
                           diffs
-                          |> Cursor.move_back(1)
-                          |> Cursor.delete(1)
-                          |> Cursor.insert([{prev_op, prev_text <> prefix}])
-                          |> Cursor.move_forward(1)
+                          |> Cursor.delete_before(1)
+                          |> Cursor.insert_before([new_prev])
                         else
-                          IO.puts("insert at head")
+                          new_head = {:equal, prefix}
+                          # DEBUG_CLEANUP_MERGE IO.inspect(new_head, label: "insert at head")
 
                           diffs
-                          |> Cursor.insert_at_head([{:equal, prefix}])
+                          |> Cursor.insert_at_head([new_head])
                         end
 
-                      IO.inspect(diffs1, label: "prefix #{prefix} factored out")
+                      # DEBUG_CLEANUP_MERGE IO.inspect(diffs1, label: "prefix #{prefix} factored out")
                       {diffs1, text1, text2}
                     else
                       {diffs, text_insert, text_delete}
@@ -1652,15 +1668,15 @@ defmodule Dmp.Diff do
                   {suffix, text1, text2} = common_suffix(text_insert, text_delete)
 
                   if suffix != "" do
-                    {_, next_text} = undiff(next_diff)
+                    new_cur = {:equal, suffix <> text}
+                    # DEBUG_CLEANUP_MERGE IO.inspect(new_cur, label: "replace at current")
 
                     diffs1 =
                       diffs
-                      |> Cursor.move_forward(1)
-                      |> Cursor.insert([{:equal, suffix <> next_text}])
-                      |> Cursor.move_back(1)
+                      |> Cursor.delete(1)
+                      |> Cursor.insert([new_cur])
 
-                    IO.inspect(diffs1, label: "suffix #{suffix} factored out")
+                    # DEBUG_CLEANUP_MERGE IO.inspect(diffs1, label: "suffix #{suffix} factored out")
                     {diffs1, text1, text2}
                   else
                     {diffs, text_insert, text_delete}
@@ -1684,38 +1700,37 @@ defmodule Dmp.Diff do
                   diffs
                 end
 
-              IO.inspect(diffs, label: "after inserting merged records")
+              # DEBUG_CLEANUP_MERGE IO.inspect(diffs, label: "after inserting merged records")
               diffs
             else
-              if !is_nil(prev_equal) do
-                if prev_equal != prev_diff do
-                  raise "prev_equal mismatch"
-                end
+              {prev_op, prev_text} = undiff(prev_diff)
 
-                {_, prev_text} = undiff(prev_diff)
-
+              if !is_nil(prev_diff) && prev_op == :equal do
                 # Merge this equality with the previous one.
+
+                new_cur = {prev_op, prev_text <> text}
+                # DEBUG_CLEANUP_MERGE IO.inspect(new_cur, label: "delete prev, merge to current")
+
                 diffs =
                   diffs
                   |> Cursor.move_back(1)
                   |> Cursor.delete(2)
-                  |> Cursor.insert([{:equal, prev_text <> text}])
+                  |> Cursor.insert([new_cur])
 
-                IO.inspect(diffs, label: "after merge prev equality")
+                # DEBUG_CLEANUP_MERGE IO.inspect(diffs, label: "after merge prev equality")
                 diffs
               else
-                IO.puts("equal no op")
+                # DEBUG_CLEANUP_MERGE IO.puts("equal no op")
                 diffs
               end
             end
 
-          %Cursor{current: this_diff} = cursor
-          {cursor, 0, 0, "", "", this_diff}
+          {cursor, 0, 0, "", ""}
       end
 
     cursor
     |> Cursor.move_forward()
-    |> check_first_pass({count_delete, count_insert, text_delete, text_insert, prev_equal})
+    |> first_pass_loop({count_delete, count_insert, text_delete, text_insert})
   end
 
   # Second pass: look for single edits surrounded on both sides by equalities
@@ -1726,72 +1741,92 @@ defmodule Dmp.Diff do
 
   defp cleanup_merge_second_pass(diffs) do
     Cursor.from_list(diffs, position: :second)
-    |> check_second_pass(false)
+    |> second_pass_loop(false)
   end
 
-  @spec check_second_pass(Cursor.t(), boolean()) :: {difflist(), boolean()}
-  defp check_second_pass(%Cursor{} = diffs, changes) do
+  @spec second_pass_loop(Cursor.t(), boolean()) :: {difflist(), boolean()}
+  defp second_pass_loop(%Cursor{next: []} = diffs, changes), do: {Cursor.to_list(diffs), changes}
+
+  defp second_pass_loop(%Cursor{} = diffs, changes) do
+    # DEBUG_CLEANUP_MERGE IO.inspect(diffs, label: "second_pass")
     {prev_diff, this_diff, next_diff} = Cursor.get(diffs)
 
-    if is_nil(prev_diff) || is_nil(this_diff) || is_nil(next_diff) do
-      {Cursor.to_list(diffs), changes}
-    else
-      {prev_op, prev_text} = prev_diff
-      {op, text} = this_diff
-      {next_op, next_text} = next_diff
+    {prev_op, prev_text} = prev_diff
+    {op, text} = this_diff
+    {next_op, next_text} = next_diff
 
-      {cursor, changes} =
-        if prev_op == :equal && next_op == :equal do
-          # This is a single edit surrounded by equalities.
-          cond do
-            String.ends_with?(text, prev_text) ->
-              # Shift the edit over the previous equality.
-              text =
-                prev_text <> substring(text, 0, String.length(text) - String.length(prev_text))
+    {cursor, changes} =
+      if prev_op == :equal && next_op == :equal do
+        # This is a single edit surrounded by equalities.
+        cond do
+          String.ends_with?(text, prev_text) ->
+            # Shift the edit over the previous equality.
+            diffs =
+              if prev_text != "" do
+                text =
+                  prev_text <> substring(text, 0, String.length(text) - String.length(prev_text))
 
-              next_text = prev_text <> next_text
-              # Delete prev_diff
-              # Delete this_diff and next_diff
-              # Update this_diff and next_diff
-              cursor =
+                next_text = prev_text <> next_text
+                new_ops = [{op, text}, {next_op, next_text}]
+                # DEBUG_CLEANUP_MERGE IO.inspect(new_ops, label: "shift left (current and next)")
+                # Delete this_diff and next_diff
+                # Update this_diff and next_diff
                 diffs
-                |> Cursor.delete_before(1)
                 |> Cursor.delete(2)
-                |> Cursor.insert_before([{op, text}, {next_op, next_text}])
-
-              {cursor, true}
-
-            String.starts_with?(text, next_text) ->
-              # Shift the edit over the next equality.
-              prev_text = prev_text <> next_text
-              text = substring(text, String.length(next_text)) <> next_text
-              # Delete prev_diff
-              # Delete this_diff
-              # Update prev_diff and this_diff
-              cursor =
+                |> Cursor.insert(new_ops)
+              else
                 diffs
-                |> Cursor.delete_before(1)
-                |> Cursor.delete(1)
-                |> Cursor.insert_before([{prev_op, prev_text}, {op, text}])
+              end
 
-              {cursor, true}
+            # DEBUG_CLEANUP_MERGE IO.puts("delete prev")
+            # Delete prev_diff
+            diffs =
+              diffs
+              |> Cursor.delete_before(1)
 
-            true ->
-              {diffs, changes}
-          end
-        else
-          {diffs, changes}
+            # DEBUG_CLEANUP_MERGE IO.inspect(diffs, label: "after shift left")
+            {diffs, true}
+
+          String.starts_with?(text, next_text) ->
+            # Shift the edit over the next equality.
+            prev_text = prev_text <> next_text
+            text = substring(text, String.length(next_text)) <> next_text
+
+            new_ops = [{prev_op, prev_text}, {op, text}]
+            # DEBUG_CLEANUP_MERGE IO.inspect(new_ops, label: "shift right (prev and current)")
+            # DEBUG_CLEANUP_MERGE IO.inspect("delete next")
+            # Delete prev_diff
+            # Delete this_diff
+            # Update prev_diff and this_diff
+            # Delete next_diff
+            diffs =
+              diffs
+              |> Cursor.move_back()
+              |> Cursor.delete(2)
+              |> Cursor.insert(new_ops)
+              |> Cursor.move_forward(2)
+              |> Cursor.delete(1)
+
+            # DEBUG_CLEANUP_MERGE IO.inspect(diffs, label: "after shift right")
+            {diffs, true}
+
+          true ->
+            {diffs, changes}
         end
+      else
+        {diffs, changes}
+      end
 
-      check_second_pass(Cursor.move_forward(cursor), changes)
-    end
+    cursor
+    |> Cursor.move_forward()
+    |> second_pass_loop(changes)
   end
 
   # Remove the dummy entry at the end.
   @spec remove_dummy(difflist()) :: difflist()
   defp remove_dummy(diffs) do
     case List.last(diffs) do
-      {:equal, ""} -> Enum.drop(diffs, -1)
+      {_, ""} -> Enum.drop(diffs, -1)
       _ -> diffs
     end
   end

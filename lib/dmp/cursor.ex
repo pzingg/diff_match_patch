@@ -234,7 +234,7 @@ defmodule Dmp.Cursor do
       iex> Cursor.from_list([1, 2]) |> Cursor.position()
       -1
 
-      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(1) |> Cursor.position()
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.position()
       0
 
       iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.position()
@@ -515,7 +515,7 @@ defmodule Dmp.Cursor do
       iex> Cursor.from_list([1, 2]) |> Cursor.get()
       {nil, nil, 1}
 
-      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(1) |> Cursor.get()
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.get()
       {nil, 1, 2}
 
       iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.get()

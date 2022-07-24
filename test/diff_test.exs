@@ -179,36 +179,30 @@ defmodule DiffTest do
   end
 
   describe "cleanup_merge" do
-    @tag :good
     test "null case" do
       assert [] == Diff.cleanup_merge([])
     end
 
-    @tag :good
-    test "no change case" do
+    test "no change" do
       diffs = [{:equal, "a"}, {:delete, "b"}, {:insert, "c"}]
       assert diffs == Diff.cleanup_merge(diffs)
     end
 
-    @tag :good
     test "merge equalities" do
       diffs = [{:equal, "a"}, {:equal, "b"}, {:equal, "c"}]
       assert [{:equal, "abc"}] == Diff.cleanup_merge(diffs)
     end
 
-    @tag :good
     test "merge deletions" do
       diffs = [{:delete, "a"}, {:delete, "b"}, {:delete, "c"}]
       assert [{:delete, "abc"}] == Diff.cleanup_merge(diffs)
     end
 
-    @tag :good
     test "merge insertions" do
       diffs = [{:insert, "a"}, {:insert, "b"}, {:insert, "c"}]
       assert [{:insert, "abc"}] == Diff.cleanup_merge(diffs)
     end
 
-    @tag :good
     test "merge interweave" do
       diffs = [
         {:delete, "a"},
@@ -222,7 +216,6 @@ defmodule DiffTest do
       assert [{:delete, "ac"}, {:insert, "bd"}, {:equal, "ef"}] == Diff.cleanup_merge(diffs)
     end
 
-    @tag :good
     test "prefix and suffix detection" do
       diffs = [{:delete, "a"}, {:insert, "abc"}, {:delete, "dc"}]
 
@@ -237,40 +230,48 @@ defmodule DiffTest do
                Diff.cleanup_merge(diffs)
     end
 
-    @tag :skip
     test "slide edit left" do
       diffs = [{:equal, "a"}, {:insert, "ba"}, {:equal, "c"}]
       assert [{:insert, "ab"}, {:equal, "ac"}] == Diff.cleanup_merge(diffs)
     end
 
-    @tag :skip
     test "slide edit right" do
       diffs = [{:equal, "c"}, {:insert, "ab"}, {:equal, "a"}]
       assert [{:equal, "ca"}, {:insert, "ba"}] == Diff.cleanup_merge(diffs)
     end
 
-    @tag :skip
     test "slide edit left recursive" do
       diffs = [{:equal, "a"}, {:delete, "b"}, {:equal, "c"}, {:delete, "ac"}, {:equal, "x"}]
       assert [{:delete, "abc"}, {:equal, "acx"}] == Diff.cleanup_merge(diffs)
     end
 
-    @tag :skip
     test "slide edit right recursive" do
       diffs = [{:equal, "x"}, {:delete, "ca"}, {:equal, "c"}, {:delete, "b"}, {:equal, "a"}]
       assert [{:equal, "xca"}, {:delete, "cba"}] == Diff.cleanup_merge(diffs)
     end
 
-    @tag :skip
     test "empty merge" do
       diffs = [{:delete, "b"}, {:insert, "ab"}, {:equal, "c"}]
       assert [{:insert, "a"}, {:equal, "bc"}] == Diff.cleanup_merge(diffs)
     end
 
-    @tag :skip
     test "empty equality" do
       diffs = [{:equal, ""}, {:insert, "a"}, {:equal, "b"}]
       assert [{:insert, "a"}, {:equal, "b"}] == Diff.cleanup_merge(diffs)
+    end
+  end
+
+  # Slide diffs to match logical boundaries.
+  describe "cleanup_semantic_lossless" do
+    test "null case" do
+      assert [] == Diff.cleanup_semantic_lossless([])
+    end
+
+    test "blank lines" do
+      diffs = [{:equal, "AAA\r\n\r\nBBB"}, {:insert, "\r\nDDD\r\n\r\nBBB"}, {:equal, "\r\nEEE"}]
+
+      assert [{:equal, "AAA\r\n\r\n"}, {:insert, "BBB\r\nDDD\r\n\r\n"}, {:equal, "BBB\r\nEEE"}] ==
+               Diff.cleanup_semantic_lossless(diffs)
     end
   end
 end
