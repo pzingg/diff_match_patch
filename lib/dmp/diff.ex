@@ -24,6 +24,18 @@ defmodule Dmp.Diff do
   @type difflist() :: list(t())
   @type options() :: Options.t()
 
+  @typedoc """
+  The result of a successful `half_match` call.
+  A tuple of five strings:
+
+    1. prefix of `text1`
+    2. suffix of `text1`
+    3. prefix of `text2`
+    4. suffix of `text2`
+    5. common middle
+  """
+  @type half_match_result() :: {String.t(), String.t(), String.t(), String.t(), String.t()}
+
   @doc """
   Find the differences between two texts.
   Most of the time `checklines` is wanted, so default to true.
@@ -814,13 +826,11 @@ defmodule Dmp.Diff do
   `text2` Second string.
   `deadline` Expiration timeout (Unix epoch timestamp in milliseconds),
 
-  Returns five element String array, containing the prefix of text1, the
-    suffix of text1, the prefix of text2, the suffix of text2 and the
-    common middle.  Or `nil` if there was no match. Returns `nil` if
-    no timeout is specified.
+  Returns a `half_match_result` 5-tuple, or `nil` if there was no match.
+  Returns `nil` if no timeout was specified.
   """
   @spec half_match(String.t(), String.t(), non_neg_integer()) ::
-          nil | {String.t(), String.t(), String.t(), String.t(), String.t()}
+          nil | half_match_result()
   def half_match(text1, text2, deadline) do
     if deadline == 0 do
       # Don't risk returning a non-optimal diff if we have unlimited time.
@@ -891,67 +901,56 @@ defmodule Dmp.Diff do
     seed_length = div(String.length(longtext), 4)
     seed = String.slice(longtext, i, seed_length)
     j = index_of(shorttext, seed)
-    half_test(seed, i, j, "", "", "", "", "", longtext, shorttext)
+    best_half_match_loop({"", "", "", "", ""}, seed, i, j, longtext, shorttext)
   end
 
-  def half_test(
-        seed,
-        i,
-        j,
-        best_longtext_a,
-        best_longtext_b,
-        best_shorttext_a,
-        best_shorttext_b,
-        best_common,
-        longtext,
-        shorttext
-      ) do
-    case j do
-      -1 ->
-        if String.length(best_common) * 2 >= String.length(longtext) do
-          {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
-        else
-          nil
-        end
-
-      _ ->
-        {longa, longb} = String.split_at(longtext, i)
-        {shorta, shortb} = String.split_at(shorttext, j)
-        {prefix, ptext1, ptext2} = common_prefix(longb, shortb)
-        prefix_length = String.length(prefix)
-        {suffix, stext1, stext2} = common_suffix(longa, shorta)
-        suffix_length = String.length(suffix)
-
-        {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common} =
-          if String.length(best_common) < prefix_length + suffix_length do
-            best_common =
-              substring(shorttext, j - suffix_length, j) <>
-                substring(shorttext, j, j + prefix_length)
-
-            best_longtext_a = substring(longtext, 0, i - suffix_length)
-            best_longtext_b = substring(longtext, i + prefix_length)
-            best_shorttext_a = substring(shorttext, 0, j - suffix_length)
-            best_shorttext_b = substring(shorttext, j + prefix_length)
-            {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
-          else
-            {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
-          end
-
-        j = index_of(shorttext, seed, j + 1)
-
-        half_test(
-          seed,
-          i,
-          j,
-          best_longtext_a,
-          best_longtext_b,
-          best_shorttext_a,
-          best_shorttext_b,
-          best_common,
-          longtext,
-          shorttext
-        )
+  # Verified tail-recursive
+  defp best_half_match_loop(
+         {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common},
+         _seed,
+         _i,
+         -1,
+         longtext,
+         _shorttext
+       ) do
+    if String.length(best_common) * 2 >= String.length(longtext) do
+      {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
+    else
+      nil
     end
+  end
+
+  defp best_half_match_loop(
+         {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common},
+         seed,
+         i,
+         j,
+         longtext,
+         shorttext
+       ) do
+    {longa, longb} = String.split_at(longtext, i)
+    {shorta, shortb} = String.split_at(shorttext, j)
+    {prefix, ptext1, ptext2} = common_prefix(longb, shortb)
+    {suffix, stext1, stext2} = common_suffix(longa, shorta)
+    common = suffix <> prefix
+
+    {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common} =
+      if String.length(best_common) < String.length(common) do
+        {stext1, ptext1, stext2, ptext2, common}
+      else
+        {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common}
+      end
+
+    j = index_of(shorttext, seed, j + 1)
+
+    best_half_match_loop(
+      {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common},
+      seed,
+      i,
+      j,
+      longtext,
+      shorttext
+    )
   end
 
   @doc """
