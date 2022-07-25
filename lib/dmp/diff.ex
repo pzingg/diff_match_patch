@@ -986,6 +986,9 @@ defmodule Dmp.Diff do
     )
   end
 
+  # Could be a :queue.queue(), but list is simpler
+  @type diffqueue() :: list(t())
+
   @doc """
   Reduce the number of edits by eliminating semantically trivial equalities.
   `diffs` - list of Diff objects.
@@ -995,7 +998,7 @@ defmodule Dmp.Diff do
 
   def cleanup_semantic(diffs) do
     # Double-ended queue of qualities
-    equalities = :queue.new()
+    equalities = []
     cursor = Cursor.from_list(diffs, position: :first)
 
     {diffs, changes} =
@@ -1030,7 +1033,7 @@ defmodule Dmp.Diff do
   @spec check_equalities(
           Cursor.t(),
           boolean(),
-          :queue.queue(),
+          diffqueue(),
           nil | t(),
           non_neg_integer(),
           non_neg_integer(),
@@ -1057,8 +1060,10 @@ defmodule Dmp.Diff do
        length_deletions2} =
         if op == :equal do
           # Equality found.
-          {Cursor.move_forward(diffs), changes, :queue.cons(this_diff, equalities), text,
-           length_insertions2, length_deletions2, 0, 0}
+          equalities = [this_diff | equalities]
+
+          {Cursor.move_forward(diffs), changes, equalities, text, length_insertions2,
+           length_deletions2, 0, 0}
         else
           # An insertion or deletion.
           {length_insertions2, length_deletions2} =
@@ -1075,7 +1080,7 @@ defmodule Dmp.Diff do
                String.length(last_equality) <= max(length_insertions2, length_deletions2) do
             # Logger.info("Splitting: '#{last_equality}'")
             # Walk back to offending equality.
-            eq = :queue.head(equalities)
+            eq = List.first(equalities)
 
             diffs1 =
               case Cursor.find_back(diffs, eq) do
@@ -1091,28 +1096,22 @@ defmodule Dmp.Diff do
               end
 
             # Throw away the equality we just deleted.
-            equalities = :queue.tail(equalities)
+            # Throw away the previous equality (it needs to be reevaluated).
+            equalities = Enum.drop(equalities, 2)
 
-            equalities =
-              if :queue.is_empty(equalities) do
-                # Throw away the previous equality (it needs to be reevaluated).
-                :queue.tail(equalities)
-              else
-                equalities
-              end
+            case equalities do
+              [] ->
+                # There are no previous equalities, walk back to the start.
+                # Reset the counters
+                {Cursor.move_first(diffs1), true, equalities, nil, 0, 0, 0, 0}
 
-            if :queue.is_empty(equalities) do
-              # There are no previous equalities, walk back to the start.
-              # Reset the counters
-              {Cursor.move_first(diffs1), true, equalities, nil, 0, 0, 0, 0}
-            else
-              eq = :queue.head(equalities)
-              # There is a safe equality we can fall back to.
-              # Reset the counters
-              case Cursor.find_back(diffs1, eq) do
-                nil -> raise "Safe equality not found"
-                c -> {c, true, equalities, nil, 0, 0, 0, 0}
-              end
+              [eq, _] ->
+                # There is a safe equality we can fall back to.
+                # Reset the counters
+                case Cursor.find_back(diffs1, eq) do
+                  nil -> raise "Safe equality not found"
+                  c -> {c, true, equalities, nil, 0, 0, 0, 0}
+                end
             end
           else
             {Cursor.move_forward(diffs), changes, equalities, last_equality, length_insertions1,
@@ -1408,11 +1407,10 @@ defmodule Dmp.Diff do
   def cleanup_efficiency([], _diff_edit_cost), do: []
 
   def cleanup_efficiency(diffs, diff_edit_cost) do
-    equalities = :queue.new()
     %Cursor{current: safe_diff} = cursor = Cursor.from_list(diffs, position: :first)
 
     {diffs, changes} =
-      check_efficiency(cursor, false, equalities, nil, safe_diff, 0, 0, 0, 0, diff_edit_cost)
+      check_efficiency(cursor, false, [], nil, safe_diff, 0, 0, 0, 0, diff_edit_cost)
 
     if changes do
       cleanup_merge(diffs)
@@ -1453,10 +1451,10 @@ defmodule Dmp.Diff do
           {equalities, last_equality, safe_diff, pre_ins, pre_del} =
             if String.length(text) < diff_edit_cost && (post_ins != 0 || post_del != 0) do
               # Candidate found.
-              {:queue.cons(this_diff, equalities), text, safe_diff, post_ins, post_del}
+              {[this_diff | equalities], text, safe_diff, post_ins, post_del}
             else
               # Not a candidate, and can never become one.
-              {:queue.new(), nil, this_diff, pre_ins, pre_del}
+              {[], nil, this_diff, pre_ins, pre_del}
             end
 
           {Cursor.move_forward(diffs), changes, equalities, last_equality, safe_diff, pre_ins,
@@ -1487,34 +1485,31 @@ defmodule Dmp.Diff do
             # Insert a corresponding an insert.
             diffs =
               diffs
-              |> Cursor.find_back!(:queue.head(equalities))
+              |> Cursor.find_back!(List.first(equalities))
               |> Cursor.delete(1)
               |> Cursor.insert_before([{:delete, last_equality}, {:insert, last_equality}])
 
             # Throw away the equality we just deleted.
-            equalities = :queue.tail(equalities)
+            equalities = Enum.drop(equalities, 1)
 
             {diffs, equalities, safe_diff, post_ins, post_del} =
               if pre_ins != 0 && pre_del != 0 do
                 # No changes made which could affect previous entry, keep going.
-                {diffs, :queue.new(), this_diff, 1, 1}
+                {diffs, [], this_diff, 1, 1}
               else
-                equalities =
-                  if !:queue.is_empty(equalities) do
-                    # Throw away the previous equality (it needs to be reevaluated).
-                    :queue.tail(equalities)
-                  else
-                    equalities
-                  end
+                # Throw away the previous equality (it needs to be reevaluated).
+                equalities = Enum.drop(equalities, 1)
 
                 target_diff =
-                  if :queue.is_empty(equalities) do
-                    # There are no previous questionable equalities,
-                    # walk back to the last known safe diff.
-                    safe_diff
-                  else
-                    # There is an equality we can fall back to.
-                    :queue.head(equalities)
+                  case equalities do
+                    [] ->
+                      # There are no previous questionable equalities,
+                      # walk back to the last known safe diff.
+                      safe_diff
+
+                    [diff | _] ->
+                      # There is an equality we can fall back to.
+                      diff
                   end
 
                 {Cursor.find_back!(diffs, target_diff), equalities, safe_diff, 0, 0}

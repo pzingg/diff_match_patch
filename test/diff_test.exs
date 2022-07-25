@@ -338,20 +338,21 @@ defmodule DiffTest do
                Diff.cleanup_semantic(diffs)
     end
 
+    @tag :good
     test "simple elimination" do
       diffs = [{:delete, "a"}, {:equal, "b"}, {:delete, "c"}]
 
       assert [{:delete, "abc"}, {:insert, "b"}] == Diff.cleanup_semantic(diffs)
     end
 
-    @tag :skip
+    @tag :good
     test "backpass elimination" do
       diffs = [{:delete, "ab"}, {:equal, "cd"}, {:delete, "e"}, {:equal, "f"}, {:insert, "g"}]
 
       assert [{:delete, "abcdef"}, {:insert, "cdfg"}] == Diff.cleanup_semantic(diffs)
     end
 
-    @tag :skip
+    @tag :good
     test "multiple eliminations" do
       diffs = [
         {:insert, "1"},
@@ -368,7 +369,7 @@ defmodule DiffTest do
       assert [{:delete, "AB_AB"}, {:insert, "1A2_1A2"}] == Diff.cleanup_semantic(diffs)
     end
 
-    @tag :skip
+    @tag :good
     test "word boundaries" do
       diffs = [{:equal, "The c"}, {:delete, "ow and the c"}, {:equal, "at."}]
 
@@ -376,14 +377,13 @@ defmodule DiffTest do
                Diff.cleanup_semantic(diffs)
     end
 
-    @tag :skip
+    @tag :good
     test "no overlap elimination" do
       diffs = [{:delete, "abcxx"}, {:insert, "xxdef"}]
 
       assert [{:delete, "abcxx"}, {:insert, "xxdef"}] == Diff.cleanup_semantic(diffs)
     end
 
-    @tag :skip
     test "overlap elimination" do
       diffs = [{:delete, "abcxxx"}, {:insert, "xxxdef"}]
 
