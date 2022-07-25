@@ -1017,12 +1017,13 @@ defmodule Dmp.Diff do
         diffs
       end
 
-    diffs = diffs |> Cursor.from_list(position: :second) |> cleanup_semantic_lossless()
-
     if Enum.count(diffs) < 2 do
       diffs
     else
-      check_overlaps(Cursor.from_list(diffs, position: :second))
+      diffs
+      |> cleanup_semantic_lossless()
+      |> Cursor.from_list(position: :second)
+      |> check_overlaps()
     end
   end
 
@@ -1210,6 +1211,8 @@ defmodule Dmp.Diff do
     |> cleanup_semantic_lossless_loop()
   end
 
+  @type score_loop_acc() :: {non_neg_integer(), String.t(), String.t(), String.t()}
+
   @spec cleanup_semantic_lossless_loop(Cursor.t()) :: difflist()
   # Verified tail-recursive
   # Intentionally ignore the first and last element (don't need checking).
@@ -1222,7 +1225,7 @@ defmodule Dmp.Diff do
     {prev_op, prev_text} = prev_diff
     {next_op, next_text} = next_diff
 
-    cursor =
+    diffs =
       if prev_op == :equal && next_op == :equal do
         # This is a single edit surrounded by equalities.
         equality1 = prev_text
@@ -1232,61 +1235,59 @@ defmodule Dmp.Diff do
         # First, shift the edit as far left as possible.
         {suffix, text1, text2} = common_suffix(equality1, edit)
 
-        {equality1, edit, equality2} =
-          if suffix != "" do
-            {text1, text2, suffix <> equality2}
-          else
-            {equality1, edit, equality2}
-          end
+        {equality1, edit, equality2} = {text1, suffix <> text2, suffix <> equality2}
 
-        # Second, step character by character right, looking for the best fit.
-        best_equality1 = equality1
-        best_edit = edit
-        best_equality2 = equality2
+        score1 = cleanup_semantic_score(equality1, edit)
+        score2 = cleanup_semantic_score(edit, equality2)
+        score = score1 + score2
 
-        best_score =
-          cleanup_semantic_score(equality1, edit) + cleanup_semantic_score(edit, equality2)
-
-        {best_equality1, best_edit, best_equality2} =
-          get_best_score(
+        {_best_score, best_equality1, best_edit, best_equality2} =
+          best_score_loop(
             equality1,
             edit,
             equality2,
-            best_equality1,
-            best_edit,
-            best_equality2,
-            best_score
+            {score, equality1, edit, equality2}
           )
 
         if prev_text != best_equality1 do
           # We have an improvement, save it back to the diff.
-          if best_equality1 != "" do
-            # Update prev_diff.
-            diffs
-            |> Cursor.delete_before(1)
-            |> Cursor.insert_before([{prev_op, best_equality1}])
-          else
-            # Delete prev_diff.
-            Cursor.delete_before(diffs, 1)
-          end
+          diffs =
+            if best_equality1 != "" do
+              new_prev = {prev_op, best_equality1}
+              # Update prev_diff.
+              diffs
+              |> Cursor.delete_before(1)
+              |> Cursor.insert_before([new_prev])
+            else
+              # Delete prev_diff.
+              Cursor.delete_before(diffs, 1)
+            end
 
+          new_cur = {op, best_edit}
           # Update this_diff.
           diffs =
             diffs
             |> Cursor.delete(1)
-            |> Cursor.insert_before([{op, best_edit}])
+            |> Cursor.insert_before([new_cur])
 
           # Now pointing at next_diff
+          diffs =
+            if best_equality2 != "" do
+              new_next = {next_op, best_equality2}
+              # Update next_diff
+              diffs
+              |> Cursor.delete(1)
+              |> Cursor.insert_before([new_next])
+              |> Cursor.move_back(2)
+            else
+              # Delete next_diff
+              diffs
+              |> Cursor.delete(1)
+              |> Cursor.move_back(1)
+            end
 
-          if best_equality2 != "" do
-            # Update next_diff
-            diffs
-            |> Cursor.delete(1)
-            |> Cursor.insert_before([{next_op, best_equality2}])
-          else
-            # Delete next_diff
-            Cursor.delete(diffs, 1)
-          end
+          # Now back to pointing at this_diff
+          diffs
         else
           diffs
         end
@@ -1299,50 +1300,43 @@ defmodule Dmp.Diff do
     |> cleanup_semantic_lossless_loop()
   end
 
-  @spec get_best_score(
+  @spec best_score_loop(
           String.t(),
           String.t(),
           String.t(),
-          String.t(),
-          String.t(),
-          String.t(),
-          non_neg_integer()
-        ) ::
-          {String.t(), String.t(), String.t()}
-  defp get_best_score(
+          score_loop_acc()
+        ) :: score_loop_acc()
+  # Verified tail-recursive
+  defp best_score_loop(
          equality1,
          edit,
          equality2,
-         best_equality1,
-         best_edit,
-         best_equality2,
-         best_score
+         {best_score, _best_equality1, _best_edit, _best_equality2} = acc
        ) do
     if edit == "" || equality2 == "" do
-      {best_equality1, best_edit, best_equality2}
+      acc
     else
-      edit_0 = String.first(edit)
-      equality2_0 = String.first(equality2)
+      # Second, step character by character right, looking for the best fit.
+      {edit_first, edit} = String.split_at(edit, 1)
+      {equality2_first, equality2} = String.split_at(equality2, 1)
 
-      if edit_0 != equality2_0 do
-        {best_equality1, best_edit, best_equality2}
+      if edit_first != equality2_first do
+        acc
       else
-        equality1 = equality1 <> edit_0
-        edit = substring(edit, 1) <> equality2_0
-        equality2 = substring(equality2, 1)
-        score = cleanup_semantic_score(equality1, edit) + cleanup_semantic_score(edit, equality2)
+        equality1 = equality1 <> edit_first
+        edit = edit <> equality2_first
+        score1 = cleanup_semantic_score(equality1, edit)
+        score2 = cleanup_semantic_score(edit, equality2)
+        score = score1 + score2
         # The >= encourages trailing rather than leading whitespace on edits.
         if score >= best_score do
-          get_best_score(equality1, edit, equality2, equality1, edit, equality2, score)
+          best_score_loop(equality1, edit, equality2, {score, equality1, edit, equality2})
         else
-          get_best_score(
+          best_score_loop(
             equality1,
             edit,
             equality2,
-            best_equality1,
-            best_edit,
-            best_equality2,
-            best_score
+            acc
           )
         end
       end
@@ -1767,13 +1761,14 @@ defmodule Dmp.Diff do
                   prev_text <> substring(text, 0, String.length(text) - String.length(prev_text))
 
                 next_text = prev_text <> next_text
-                new_ops = [{op, text}, {next_op, next_text}]
-                # DEBUG_CLEANUP_MERGE IO.inspect(new_ops, label: "shift left (current and next)")
+                new_cur_and_next = [{op, text}, {next_op, next_text}]
+
+                # DEBUG_CLEANUP_MERGE IO.inspect(new_cur_and_next, label: "shift left (current and next)")
                 # Delete this_diff and next_diff
                 # Update this_diff and next_diff
                 diffs
                 |> Cursor.delete(2)
-                |> Cursor.insert(new_ops)
+                |> Cursor.insert(new_cur_and_next)
               else
                 diffs
               end
@@ -1792,8 +1787,9 @@ defmodule Dmp.Diff do
             prev_text = prev_text <> next_text
             text = substring(text, String.length(next_text)) <> next_text
 
-            new_ops = [{prev_op, prev_text}, {op, text}]
-            # DEBUG_CLEANUP_MERGE IO.inspect(new_ops, label: "shift right (prev and current)")
+            new_prev_and_cur = [{prev_op, prev_text}, {op, text}]
+
+            # DEBUG_CLEANUP_MERGE IO.inspect(new_prev_and_cur, label: "shift right (prev and current)")
             # DEBUG_CLEANUP_MERGE IO.inspect("delete next")
             # Delete prev_diff
             # Delete this_diff
@@ -1803,7 +1799,7 @@ defmodule Dmp.Diff do
               diffs
               |> Cursor.move_back()
               |> Cursor.delete(2)
-              |> Cursor.insert(new_ops)
+              |> Cursor.insert(new_prev_and_cur)
               |> Cursor.move_forward(2)
               |> Cursor.delete(1)
 

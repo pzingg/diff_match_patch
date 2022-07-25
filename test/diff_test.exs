@@ -263,6 +263,7 @@ defmodule DiffTest do
 
   # Slide diffs to match logical boundaries.
   describe "cleanup_semantic_lossless" do
+    @tag :good
     test "null case" do
       assert [] == Diff.cleanup_semantic_lossless([])
     end
@@ -272,6 +273,224 @@ defmodule DiffTest do
 
       assert [{:equal, "AAA\r\n\r\n"}, {:insert, "BBB\r\nDDD\r\n\r\n"}, {:equal, "BBB\r\nEEE"}] ==
                Diff.cleanup_semantic_lossless(diffs)
+    end
+
+    test "line boundaries" do
+      diffs = [{:equal, "AAA\r\nBBB"}, {:insert, " DDD\r\nBBB"}, {:equal, " EEE"}]
+
+      assert [{:equal, "AAA\r\n"}, {:insert, "BBB DDD\r\n"}, {:equal, "BBB EEE"}] ==
+               Diff.cleanup_semantic_lossless(diffs)
+    end
+
+    test "word boundaries" do
+      diffs = [{:equal, "The c"}, {:insert, "ow and the c"}, {:equal, "at."}]
+
+      assert [{:equal, "The "}, {:insert, "cow and the "}, {:equal, "cat."}] ==
+               Diff.cleanup_semantic_lossless(diffs)
+    end
+
+    test "alphanumeric boundaries" do
+      diffs = [{:equal, "The-c"}, {:insert, "ow-and-the-c"}, {:equal, "at."}]
+
+      assert [{:equal, "The-"}, {:insert, "cow-and-the-"}, {:equal, "cat."}] ==
+               Diff.cleanup_semantic_lossless(diffs)
+    end
+
+    test "hitting the start" do
+      diffs = [{:equal, "a"}, {:delete, "a"}, {:equal, "ax"}]
+      assert [{:delete, "a"}, {:equal, "aax"}] == Diff.cleanup_semantic_lossless(diffs)
+    end
+
+    test "hitting the end" do
+      diffs = [{:equal, "xa"}, {:delete, "a"}, {:equal, "a"}]
+      assert [{:equal, "xaa"}, {:delete, "a"}] == Diff.cleanup_semantic_lossless(diffs)
+    end
+
+    test "sentence boundaries" do
+      diffs = [{:equal, "The xxx. The "}, {:insert, "zzz. The "}, {:equal, "yyy."}]
+
+      assert [{:equal, "The xxx."}, {:insert, " The zzz."}, {:equal, " The yyy."}] ==
+               Diff.cleanup_semantic_lossless(diffs)
+    end
+  end
+
+  describe "cleanup semantically trivial equalities" do
+    @tag :good
+    test "null case" do
+      diffs = []
+
+      assert [] == Diff.cleanup_semantic(diffs)
+    end
+
+    @tag :good
+    test "no elimination #1" do
+      diffs = [{:delete, "ab"}, {:insert, "cd"}, {:equal, "12"}, {:delete, "e"}]
+
+      assert [{:delete, "ab"}, {:insert, "cd"}, {:equal, "12"}, {:delete, "e"}] ==
+               Diff.cleanup_semantic(diffs)
+    end
+
+    @tag :good
+    test "no elimination #2" do
+      diffs = [{:delete, "abc"}, {:insert, "ABC"}, {:equal, "1234"}, {:delete, "wxyz"}]
+
+      assert [{:delete, "abc"}, {:insert, "ABC"}, {:equal, "1234"}, {:delete, "wxyz"}] ==
+               Diff.cleanup_semantic(diffs)
+    end
+
+    test "simple elimination" do
+      diffs = [{:delete, "a"}, {:equal, "b"}, {:delete, "c"}]
+
+      assert [{:delete, "abc"}, {:insert, "b"}] == Diff.cleanup_semantic(diffs)
+    end
+
+    @tag :skip
+    test "backpass elimination" do
+      diffs = [{:delete, "ab"}, {:equal, "cd"}, {:delete, "e"}, {:equal, "f"}, {:insert, "g"}]
+
+      assert [{:delete, "abcdef"}, {:insert, "cdfg"}] == Diff.cleanup_semantic(diffs)
+    end
+
+    @tag :skip
+    test "multiple eliminations" do
+      diffs = [
+        {:insert, "1"},
+        {:equal, "A"},
+        {:delete, "B"},
+        {:insert, "2"},
+        {:equal, "_"},
+        {:insert, "1"},
+        {:equal, "A"},
+        {:delete, "B"},
+        {:insert, "2"}
+      ]
+
+      assert [{:delete, "AB_AB"}, {:insert, "1A2_1A2"}] == Diff.cleanup_semantic(diffs)
+    end
+
+    @tag :skip
+    test "word boundaries" do
+      diffs = [{:equal, "The c"}, {:delete, "ow and the c"}, {:equal, "at."}]
+
+      assert [{:equal, "The "}, {:delete, "cow and the "}, {:equal, "cat."}] ==
+               Diff.cleanup_semantic(diffs)
+    end
+
+    @tag :skip
+    test "no overlap elimination" do
+      diffs = [{:delete, "abcxx"}, {:insert, "xxdef"}]
+
+      assert [{:delete, "abcxx"}, {:insert, "xxdef"}] == Diff.cleanup_semantic(diffs)
+    end
+
+    @tag :skip
+    test "overlap elimination" do
+      diffs = [{:delete, "abcxxx"}, {:insert, "xxxdef"}]
+
+      assert [{:delete, "abc"}, {:equal, "xxx"}, {:insert, "def"}] == Diff.cleanup_semantic(diffs)
+    end
+
+    @tag :skip
+    test "reverse overlap elimination" do
+      diffs = [{:delete, "xxxabc"}, {:insert, "defxxx"}]
+
+      assert [{:insert, "def"}, {:equal, "xxx"}, {:delete, "abc"}] == Diff.cleanup_semantic(diffs)
+    end
+
+    @tag :skip
+    test "two overlap eliminations" do
+      diffs = [
+        {:delete, "abcd1212"},
+        {:insert, "1212efghi"},
+        {:equal, "----"},
+        {:delete, "A3"},
+        {:insert, "3BC"}
+      ]
+
+      assert [
+               {:delete, "abcd"},
+               {:equal, "1212"},
+               {:insert, "efghi"},
+               {:equal, "----"},
+               {:delete, "A"},
+               {:equal, "3"},
+               {:insert, "BC"}
+             ] == Diff.cleanup_semantic(diffs)
+    end
+  end
+
+  describe "cleanup operationally trivial equalities" do
+    test "null case" do
+      diffs = []
+
+      assert [] == Diff.cleanup_efficiency(diffs, 4)
+    end
+
+    @tag :skip
+    test "no elimination" do
+      diffs = [
+        {:delete, "ab"},
+        {:insert, "12"},
+        {:equal, "wxyz"},
+        {:delete, "cd"},
+        {:insert, "34"}
+      ]
+
+      assert [
+               {:delete, "ab"},
+               {:insert, "12"},
+               {:equal, "wxyz"},
+               {:delete, "cd"},
+               {:insert, "34"}
+             ] == Diff.cleanup_efficiency(diffs, 4)
+    end
+
+    @tag :skip
+    test "four-edit elimination" do
+      diffs = [
+        {:delete, "ab"},
+        {:insert, "12"},
+        {:equal, "xyz"},
+        {:delete, "cd"},
+        {:insert, "34"}
+      ]
+
+      assert [{:delete, "abxyzcd"}, {:insert, "12xyz34"}] == Diff.cleanup_efficiency(diffs, 4)
+    end
+
+    @tag :skip
+    test "three-edit elimination" do
+      diffs = [{:insert, "12"}, {:equal, "x"}, {:delete, "cd"}, {:insert, "34"}]
+
+      assert [{:delete, "xcd"}, {:insert, "12x34"}] == Diff.cleanup_efficiency(diffs, 4)
+    end
+
+    @tag :skip
+    test "backpass elimination" do
+      diffs = [
+        {:delete, "ab"},
+        {:insert, "12"},
+        {:equal, "xy"},
+        {:insert, "34"},
+        {:equal, "z"},
+        {:delete, "cd"},
+        {:insert, "56"}
+      ]
+
+      assert [{:delete, "abxyzcd"}, {:insert, "12xy34z56"}] == Diff.cleanup_efficiency(diffs, 4)
+    end
+
+    @tag :skip
+    test "high cost elimination" do
+      diffs = [
+        {:delete, "ab"},
+        {:insert, "12"},
+        {:equal, "wxyz"},
+        {:delete, "cd"},
+        {:insert, "34"}
+      ]
+
+      assert [{:delete, "abwxyzcd"}, {:insert, "12wxyz34"}] == Diff.cleanup_efficiency(diffs, 5)
     end
   end
 end
