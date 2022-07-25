@@ -405,6 +405,7 @@ defmodule Dmp.Patch do
     _patches = split_max(patches, match_max_bits, patch_margin)
 
     # TODO
+    {text, []}
   end
 
   @doc """

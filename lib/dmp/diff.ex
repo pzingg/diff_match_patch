@@ -24,12 +24,6 @@ defmodule Dmp.Diff do
   @type difflist() :: list(t())
   @type options() :: Options.t()
 
-  @type munge_line_hash() :: %{String.t() => non_neg_integer()}
-  @type munge_line_acc() ::
-          {munge_line_hash(), list(String.t()), nil | list(non_neg_integer()),
-           nil | non_neg_integer()}
-  @type munge_line_result() :: {munge_line_hash(), list(String.t()), String.t()}
-
   @typedoc """
   The result of a successful `half_match` call.
   A tuple of five strings:
@@ -645,6 +639,12 @@ defmodule Dmp.Diff do
         raise "pop_line error"
     end
   end
+
+  @type munge_line_hash() :: %{String.t() => non_neg_integer()}
+  @type munge_line_acc() ::
+          {munge_line_hash(), list(String.t()), nil | list(non_neg_integer()),
+           nil | non_neg_integer()}
+  @type munge_line_result() :: {munge_line_hash(), list(String.t()), String.t()}
 
   @spec lines_to_chars_munge(
           String.t(),
