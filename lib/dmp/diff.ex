@@ -990,8 +990,7 @@ defmodule Dmp.Diff do
   """
   @type diffqueue() :: :queue.queue()
 
-  defp safe_drop_r(queue, count \\ 1)
-  defp safe_drop_r(queue, count) when count <= 0, do: queue
+  defp safe_drop_r(queue, n \\ 1)
 
   defp safe_drop_r(queue, 1) do
     if :queue.is_empty(queue) do
@@ -1001,13 +1000,15 @@ defmodule Dmp.Diff do
     end
   end
 
-  defp safe_drop_r(queue, n) do
+  defp safe_drop_r(queue, n) when n > 1 do
     safe_drop_r(queue) |> safe_drop_r(n - 1)
   end
 
+  defp safe_drop_r(queue, _), do: queue
+
   @type semantic_acc() :: {
           boolean(),
-          :queue.queue(),
+          diffqueue(),
           nil | String.t(),
           non_neg_integer(),
           non_neg_integer(),
@@ -1413,7 +1414,7 @@ defmodule Dmp.Diff do
 
   @type efficiency_acc() :: {
           boolean(),
-          :queue.queue(),
+          diffqueue(),
           nil | String.t(),
           t(),
           non_neg_integer(),
