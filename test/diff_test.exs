@@ -172,7 +172,6 @@ defmodule DiffTest do
       # More than 55_295 to verify any 17 * 16-bit limitation.
       chars = Enum.map(55_290..55_299, fn i -> "#{i}\n" end) |> Enum.join("")
       {chars1, _chars2, line_list} = Diff.lines_to_chars(chars, "")
-
       [{_op, text}] = [{:insert, chars1}] |> Diff.chars_to_lines(line_list)
       assert chars == text
     end
@@ -263,7 +262,6 @@ defmodule DiffTest do
 
   # Slide diffs to match logical boundaries.
   describe "cleanup_semantic_lossless" do
-    @tag :good
     test "null case" do
       assert [] == Diff.cleanup_semantic_lossless([])
     end
@@ -315,14 +313,10 @@ defmodule DiffTest do
   end
 
   describe "cleanup semantically trivial equalities" do
-    @tag :good
     test "null case" do
-      diffs = []
-
-      assert [] == Diff.cleanup_semantic(diffs)
+      assert [] == Diff.cleanup_semantic([])
     end
 
-    @tag :good
     test "no elimination #1" do
       diffs = [{:delete, "ab"}, {:insert, "cd"}, {:equal, "12"}, {:delete, "e"}]
 
@@ -330,7 +324,6 @@ defmodule DiffTest do
                Diff.cleanup_semantic(diffs)
     end
 
-    @tag :good
     test "no elimination #2" do
       diffs = [{:delete, "abc"}, {:insert, "ABC"}, {:equal, "1234"}, {:delete, "wxyz"}]
 
@@ -338,21 +331,16 @@ defmodule DiffTest do
                Diff.cleanup_semantic(diffs)
     end
 
-    @tag :good
     test "simple elimination" do
       diffs = [{:delete, "a"}, {:equal, "b"}, {:delete, "c"}]
-
       assert [{:delete, "abc"}, {:insert, "b"}] == Diff.cleanup_semantic(diffs)
     end
 
-    @tag :good
     test "backpass elimination" do
       diffs = [{:delete, "ab"}, {:equal, "cd"}, {:delete, "e"}, {:equal, "f"}, {:insert, "g"}]
-
       assert [{:delete, "abcdef"}, {:insert, "cdfg"}] == Diff.cleanup_semantic(diffs)
     end
 
-    @tag :good
     test "multiple eliminations" do
       diffs = [
         {:insert, "1"},
@@ -369,7 +357,6 @@ defmodule DiffTest do
       assert [{:delete, "AB_AB"}, {:insert, "1A2_1A2"}] == Diff.cleanup_semantic(diffs)
     end
 
-    @tag :good
     test "word boundaries" do
       diffs = [{:equal, "The c"}, {:delete, "ow and the c"}, {:equal, "at."}]
 
@@ -377,27 +364,21 @@ defmodule DiffTest do
                Diff.cleanup_semantic(diffs)
     end
 
-    @tag :good
     test "no overlap elimination" do
       diffs = [{:delete, "abcxx"}, {:insert, "xxdef"}]
-
       assert [{:delete, "abcxx"}, {:insert, "xxdef"}] == Diff.cleanup_semantic(diffs)
     end
 
     test "overlap elimination" do
       diffs = [{:delete, "abcxxx"}, {:insert, "xxxdef"}]
-
       assert [{:delete, "abc"}, {:equal, "xxx"}, {:insert, "def"}] == Diff.cleanup_semantic(diffs)
     end
 
-    @tag :skip
     test "reverse overlap elimination" do
       diffs = [{:delete, "xxxabc"}, {:insert, "defxxx"}]
-
       assert [{:insert, "def"}, {:equal, "xxx"}, {:delete, "abc"}] == Diff.cleanup_semantic(diffs)
     end
 
-    @tag :skip
     test "two overlap eliminations" do
       diffs = [
         {:delete, "abcd1212"},
@@ -419,14 +400,12 @@ defmodule DiffTest do
     end
   end
 
+  # Use default edit_cost 4
   describe "cleanup operationally trivial equalities" do
     test "null case" do
-      diffs = []
-
-      assert [] == Diff.cleanup_efficiency(diffs, 4)
+      assert [] == Diff.cleanup_efficiency([], 4)
     end
 
-    @tag :skip
     test "no elimination" do
       diffs = [
         {:delete, "ab"},
@@ -445,7 +424,6 @@ defmodule DiffTest do
              ] == Diff.cleanup_efficiency(diffs, 4)
     end
 
-    @tag :skip
     test "four-edit elimination" do
       diffs = [
         {:delete, "ab"},
@@ -458,14 +436,11 @@ defmodule DiffTest do
       assert [{:delete, "abxyzcd"}, {:insert, "12xyz34"}] == Diff.cleanup_efficiency(diffs, 4)
     end
 
-    @tag :skip
     test "three-edit elimination" do
       diffs = [{:insert, "12"}, {:equal, "x"}, {:delete, "cd"}, {:insert, "34"}]
-
       assert [{:delete, "xcd"}, {:insert, "12x34"}] == Diff.cleanup_efficiency(diffs, 4)
     end
 
-    @tag :skip
     test "backpass elimination" do
       diffs = [
         {:delete, "ab"},
@@ -480,7 +455,7 @@ defmodule DiffTest do
       assert [{:delete, "abxyzcd"}, {:insert, "12xy34z56"}] == Diff.cleanup_efficiency(diffs, 4)
     end
 
-    @tag :skip
+    # use edit_cost 5
     test "high cost elimination" do
       diffs = [
         {:delete, "ab"},

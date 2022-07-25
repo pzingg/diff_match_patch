@@ -362,6 +362,15 @@ defmodule Dmp.Cursor do
       iex> Cursor.from_list([1, 2, 3, 4, 5]) |> Cursor.move_forward(6)
       %Cursor{current: nil, next: [], prev: [5, 4, 3, 2, 1]}
 
+      iex> %Cursor{current: {:delete, "abc"}, next: [{:equal, "xxx"}, {:insert, "def"}], prev: []} |> Cursor.move_forward(1)
+      %Cursor{current: {:equal, "xxx"}, next: [{:insert, "def"}], prev: [{:delete, "abc"}]}
+
+      iex> %Cursor{current: {:delete, "abc"}, next: [{:equal, "xxx"}, {:insert, "def"}], prev: []} |> Cursor.move_forward(2)
+      %Cursor{current: {:insert, "def"}, next: [], prev: [{:equal, "xxx"}, {:delete, "abc"}]}
+
+      iex> %Cursor{current: {:delete, "abc"}, next: [{:equal, "xxx"}, {:insert, "def"}], prev: []} |> Cursor.move_forward(3)
+      %Cursor{current: nil, next: [], prev: [{:insert, "def"}, {:equal, "xxx"}, {:delete, "abc"}]}
+
   """
   @spec move_forward(t(), integer()) :: t()
   def move_forward(cursor, count \\ 1)
@@ -377,7 +386,7 @@ defmodule Dmp.Cursor do
       end
 
     if count > Enum.count(next) do
-      %Cursor{prev: current_and_prev ++ Enum.reverse(next), current: nil, next: []}
+      %Cursor{prev: Enum.reverse(next) ++ current_and_prev, current: nil, next: []}
     else
       {moved, next_next} = Enum.split(next, count)
 
@@ -493,7 +502,7 @@ defmodule Dmp.Cursor do
   @spec find_back!(t(), term()) :: t()
   def find_back!(%Cursor{} = c, item) do
     case find_back(c, item) do
-      nil -> raise "item not found in Cursor"
+      nil -> raise "item #{inspect(item)} not found in Cursor"
       found -> found
     end
   end
