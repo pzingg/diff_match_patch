@@ -1,6 +1,8 @@
 defmodule DiffTest do
   use ExUnit.Case
 
+  @moduletag :good
+
   alias Dmp.{Diff, Options}
 
   # doctest Dmp.Diff
@@ -664,7 +666,7 @@ defmodule DiffTest do
 
       texts_linemode = Diff.main(a, b, true) |> rebuild_texts()
       texts_textmode = Diff.main(a, b, false) |> rebuild_texts()
-      assert texts_textmode = texts_linemode
+      assert texts_textmode == texts_linemode
     end
   end
 end

@@ -249,11 +249,15 @@ defmodule Dmp.Match do
     end
   end
 
-  # Initialise the alphabet for the Bitap algorithm.
-  # `pattern` The text to encode.
-  # Returns hash of character locations.
+  @doc """
+  Initialise the alphabet for the Bitap algorithm.
+
+  `pattern` - The text to encode.
+
+  Returns map of character locations.
+  """
   @spec alphabet(String.t()) :: %{integer() => integer()}
-  defp alphabet(pattern) when is_binary(pattern) do
+  def alphabet(pattern) when is_binary(pattern) do
     pattern_length = String.length(pattern)
 
     pattern
