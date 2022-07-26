@@ -9,9 +9,9 @@ defmodule DiffTest do
     :os.system_time(:millisecond) + 1_000
   end
 
-  defp with_zero_timeout() do
+  defp with_timeout(secs) do
     opts = %Options{}
-    %Options{opts | diff_timeout: 0}
+    %Options{opts | diff_timeout: secs}
   end
 
   # Construct the two texts which made up the diff originally.
@@ -536,7 +536,7 @@ defmodule DiffTest do
     # Switch off the timeout.
 
     test "simple case 1" do
-      assert [{:delete, "a"}, {:insert, "b"}] == Diff.main("a", "b", false, with_zero_timeout())
+      assert [{:delete, "a"}, {:insert, "b"}] == Diff.main("a", "b", false, with_timeout(0))
     end
 
     test "simple case 2" do
@@ -551,7 +551,7 @@ defmodule DiffTest do
                  "Apples are a fruit.",
                  "Bananas are also fruit.",
                  false,
-                 with_zero_timeout()
+                 with_timeout(0)
                )
     end
 
@@ -562,7 +562,7 @@ defmodule DiffTest do
                {:equal, "x"},
                {:delete, "\t"},
                {:insert, "\x00"}
-             ] == Diff.main("ax\t", "\u0680x\x00", false, with_zero_timeout())
+             ] == Diff.main("ax\t", "\u0680x\x00", false, with_timeout(0))
     end
 
     test "overlap 1" do
@@ -573,12 +573,12 @@ defmodule DiffTest do
                {:equal, "b"},
                {:delete, "2"},
                {:insert, "xab"}
-             ] == Diff.main("1ayb2", "abxab", false, with_zero_timeout())
+             ] == Diff.main("1ayb2", "abxab", false, with_timeout(0))
     end
 
     test "overlap 2" do
       assert [{:insert, "xaxcx"}, {:equal, "abc"}, {:delete, "y"}] ==
-               Diff.main("abcy", "xaxcxabc", false, with_zero_timeout())
+               Diff.main("abcy", "xaxcxabc", false, with_timeout(0))
     end
 
     test "overlap 3" do
@@ -597,7 +597,7 @@ defmodule DiffTest do
                  "ABCDa=bcd=efghijklmnopqrsEFGHIJKLMNOefg",
                  "a-bcd-efghijklmnopqrs",
                  false,
-                 with_zero_timeout()
+                 with_timeout(0)
                )
     end
 
@@ -613,8 +613,58 @@ defmodule DiffTest do
                  "a [[Pennsylvania]] and [[New",
                  " and [[Pennsylvania]]",
                  false,
-                 with_zero_timeout()
+                 with_timeout(0)
                )
+    end
+  end
+
+  test "timeout" do
+    # 100 ms
+    timeout = 0.1
+
+    a =
+      "`Twas brillig, and the slithy toves\nDid gyre and gimble in the wabe:\nAll mimsy were the borogoves,\nAnd the mome raths outgrabe.\n"
+
+    b =
+      "I am the very model of a modern major general,\nI've information vegetable, animal, and mineral,\nI know the kings of England, and I quote the fights historical,\nFrom Marathon to Waterloo, in order categorical.\n"
+
+    # Increase the text lengths by 1024 times to ensure a timeout.
+    {a, b} = Enum.reduce(1..10, {a, b}, fn _, {a, b} -> {a <> a, b <> b} end)
+    start_time = :os.system_time(:millisecond)
+    Diff.main(a, b, with_timeout(timeout))
+    end_time = :os.system_time(:millisecond)
+    # Test that we took at least the timeout period.
+    assert timeout * 1_000 <= end_time - start_time
+    # Test that we didn't take forever (be forgiving).
+    # Theoretically this test could fail very occasionally if the
+    # OS task swaps or locks up for a second at the wrong moment.
+    assert timeout * 30_000 > end_time - start_time
+  end
+
+  # Test the linemode speedup.
+  # Must be long to pass the 100 char cutoff.
+  describe "line mode" do
+    test "simple" do
+      a = String.duplicate("1234567890\n", 13)
+      b = String.duplicate("abcdefghij\n", 13)
+      assert Diff.main(a, b, false) == Diff.main(a, b, true)
+    end
+
+    test "single" do
+      a = String.duplicate("1234567890", 13)
+      b = String.duplicate("abcdefghij", 13)
+      assert Diff.main(a, b, false) == Diff.main(a, b, true)
+    end
+
+    test "overlap" do
+      a = String.duplicate("1234567890\n", 13)
+
+      b =
+        "abcdefghij\n1234567890\n1234567890\n1234567890\nabcdefghij\n1234567890\n1234567890\n1234567890\nabcdefghij\n1234567890\n1234567890\n1234567890\nabcdefghij\n"
+
+      texts_linemode = Diff.main(a, b, true) |> rebuild_texts()
+      texts_textmode = Diff.main(a, b, false) |> rebuild_texts()
+      assert texts_textmode = texts_linemode
     end
   end
 end
