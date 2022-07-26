@@ -73,6 +73,9 @@ defmodule Dmp.StringUtils do
       iex> StringUtils.index_of("abracadabra", "d", 9)
       -1
 
+      iex> StringUtils.last_index_of("abcdefghijk", "fgh", 5)
+      5
+
   """
   @spec last_index_of(String.t(), String.t(), non_neg_integer()) :: integer()
   def last_index_of("", _, _), do: -1

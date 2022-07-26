@@ -58,13 +58,13 @@ defmodule Dmp.Match do
   `text` The text to search.
   `pattern` The pattern to search for.
   `loc` The location to search around.
-  `match_threshold` - At what point is no match declared (0.0 = perfection, 1.0 = very loose).
-  `match_distance` - How far to search for a match (0 = exact location, 1000+ = broad match).
+  `match_threshold` - At what point is no match declared (0.0 = perfection, 1.0 = very loose, default = 0.5).
+  `match_distance` - How far to search for a match (0 = exact location, 1000+ = broad match, default = 1000).
 
   Returns best match index or -1.
   """
   @spec bitap(String.t(), String.t(), non_neg_integer(), float(), non_neg_integer()) :: integer()
-  def bitap(text, pattern, loc, match_threshold, match_distance) do
+  def bitap(text, pattern, loc, match_threshold \\ 0.5, match_distance \\ 1000) do
     text_length = String.length(text)
     pattern_length = String.length(pattern)
 
@@ -81,8 +81,9 @@ defmodule Dmp.Match do
           match_threshold
 
         best_loc_1 ->
-          score_1 =
-            min(bitap_score(0, best_loc_1, loc, pattern_length, match_distance), match_threshold)
+          score_1 = bitap_score(0, best_loc_1, loc, pattern_length, match_distance)
+          IO.inspect(score_1, label: "score_1")
+          score_1 = min(score_1, match_threshold)
 
           # What about in the other direction? (speedup)
           case last_index_of(text, pattern, loc + pattern_length) do
@@ -90,87 +91,103 @@ defmodule Dmp.Match do
               score_1
 
             best_loc_2 ->
-              min(bitap_score(0, best_loc_2, loc, pattern_length, match_distance), score_1)
+              score_2 = bitap_score(0, best_loc_2, loc, pattern_length, match_distance)
+              IO.inspect(score_2, label: "score_2")
+              min(score_2, score_1)
           end
       end
+
+    IO.inspect({best_loc, score_threshold}, label: "best_loc, score_threshold")
 
     # Initialise the bit arrays.
     matchmask = 1 <<< (pattern_length - 1)
 
-    Enum.reduce_while(
-      0..(pattern_length - 1),
-      {-1, %{}, text_length + pattern_length, score_threshold},
-      fn d, {best_loc, last_rd, bin_max, score_threshold} ->
-        # Scan for the best match; each iteration allows for one more error.
-        # Run a binary search to determine how far from 'loc' we can stray at
-        # this error level.
-        # Use the result from this iteration as the maximum for the next.
-        bin_max =
-          bin_mid =
-          bin_score(0, bin_max, bin_max, d, loc, pattern_length, score_threshold, match_distance)
+    {best_loc, _score_threshold, _rd, _bin_max} =
+      Enum.reduce_while(
+        0..(pattern_length - 1),
+        {-1, score_threshold, %{}, text_length + pattern_length},
+        fn d, {best_loc, score_threshold, last_rd, bin_max} ->
+          # Scan for the best match; each iteration allows for one more error.
+          # Run a binary search to determine how far from 'loc' we can stray at
+          # this error level.
+          # Use the result from this iteration as the maximum for the next.
+          bin_max =
+            bin_mid =
+            bin_score(
+              0,
+              bin_max,
+              bin_max,
+              d,
+              loc,
+              pattern_length,
+              score_threshold,
+              match_distance
+            )
 
-        finish = min(loc + bin_mid, text_length) + pattern_length
-        start = max(1, loc - bin_mid + 1)
-        rd_0 = %{(finish + 1) => 1 <<< (d - 1)}
+          finish = min(loc + bin_mid, text_length) + pattern_length
+          start = max(1, loc - bin_mid + 1)
+          rd_0 = %{(finish + 1) => 1 <<< (d - 1)}
 
-        {best_loc, rd, score_threshold} =
-          Enum.reduce_while(finish..0//-1, {start, best_loc, rd_0, score_threshold}, fn j,
-                                                                                        {start,
-                                                                                         best_loc,
-                                                                                         rd,
-                                                                                         score_threshold} ->
-            if j < start do
-              {:halt, {rd, score_threshold}}
-            else
-              ch = String.at(text, j - 1)
-              char_match = Map.get(s, ch, 0)
+          {best_loc, score_threshold, rd, _start} =
+            Enum.reduce_while(finish..0//-1, {best_loc, score_threshold, rd_0, start}, fn j,
+                                                                                          {best_loc,
+                                                                                           score_threshold,
+                                                                                           rd,
+                                                                                           start} ->
+              if j < start do
+                {:halt, {best_loc, score_threshold, rd, start}}
+              else
+                ch = String.at(text, j - 1)
+                char_match = Map.get(s, ch, 0)
 
-              rd_j =
-                if d == 0 do
-                  # First pass: exact match.
-                  (Map.get(rd, j + 1, 0) ||| 1) &&& char_match
-                else
-                  # Subsequent passes: fuzzy match.
-                  ((Map.get(rd, j + 1) <<< 1 ||| 1) &&& char_match) |||
-                    ((Map.get(last_rd, j + 1) ||| Map.get(last_rd, j)) <<< 1 ||| 1) |||
-                    Map.get(last_rd, j + 1)
-                end
-
-              rd = Map.put(rd, j, rd_j)
-
-              if (rd_j &&& matchmask) != 0 do
-                score = bitap_score(d, j - 1, loc, pattern_length, match_distance)
-                # This match will almost certainly be better than any existing
-                # match.  But check anyway.
-                if score <= score_threshold do
-                  # Told you so.
-                  best_loc = j - 1
-
-                  if best_loc > loc do
-                    # When passing loc, don't exceed our current distance from loc.
-                    start = max(1, 2 * loc - best_loc)
-                    {:cont, {start, best_loc, rd, score}}
+                rd_j =
+                  if d == 0 do
+                    # First pass: exact match.
+                    (Map.get(rd, j + 1, 0) ||| 1) &&& char_match
                   else
-                    # Already passed loc, downhill from here on in.
-                    {:halt, {best_loc, rd, score}}
+                    # Subsequent passes: fuzzy match.
+                    ((Map.get(rd, j + 1) <<< 1 ||| 1) &&& char_match) |||
+                      ((Map.get(last_rd, j + 1) ||| Map.get(last_rd, j)) <<< 1 ||| 1) |||
+                      Map.get(last_rd, j + 1)
+                  end
+
+                rd = Map.put(rd, j, rd_j)
+
+                if (rd_j &&& matchmask) != 0 do
+                  score = bitap_score(d, j - 1, loc, pattern_length, match_distance)
+                  # This match will almost certainly be better than any existing
+                  # match.  But check anyway.
+                  if score <= score_threshold do
+                    # Told you so.
+                    best_loc = j - 1
+
+                    if best_loc > loc do
+                      # When passing loc, don't exceed our current distance from loc.
+                      start = max(1, 2 * loc - best_loc)
+                      {:cont, {best_loc, score, rd, start}}
+                    else
+                      # Already passed loc, downhill from here on in.
+                      {:halt, {best_loc, score, rd, start}}
+                    end
+                  else
+                    {:cont, {best_loc, score_threshold, rd, start}}
                   end
                 else
-                  {:cont, {start, best_loc, rd, score_threshold}}
+                  {:cont, {best_loc, score_threshold, rd, start}}
                 end
-              else
-                {:cont, {start, best_loc, rd, score_threshold}}
               end
-            end
-          end)
+            end)
 
-        if bitap_score(d + 1, loc, loc, pattern_length, match_distance) > score_threshold do
-          # No hope for a (better) match at greater error levels.
-          {:halt, best_loc}
-        else
-          {:cont, {best_loc, rd, bin_max}}
+          if bitap_score(d + 1, loc, loc, pattern_length, match_distance) > score_threshold do
+            # No hope for a (better) match at greater error levels.
+            {:halt, {best_loc, score_threshold, rd, bin_max}}
+          else
+            {:cont, {best_loc, score_threshold, rd, bin_max}}
+          end
         end
-      end
-    )
+      )
+
+    best_loc
   end
 
   @spec bin_score(
