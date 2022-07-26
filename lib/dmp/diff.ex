@@ -32,6 +32,8 @@ defmodule Dmp.Diff do
 
   @type options() :: Options.t()
 
+  @type expiry() :: :never | non_neg_integer()
+
   @typedoc """
   The result of a successful `half_match` call.
   A tuple of five strings:
@@ -64,21 +66,17 @@ defmodule Dmp.Diff do
 
     deadline =
       if opts.diff_timeout <= 0 do
-        0
+        :never
       else
-        :os.system_time(:millisecond) + round(opts.diff_timeout * 1000)
+        deadline = :os.system_time(:millisecond) + round(opts.diff_timeout * 1000)
       end
 
     main_impl(text1, text2, check_lines, deadline)
   end
 
-  @spec main_impl(String.t(), String.t(), boolean(), non_neg_integer()) :: difflist()
-  defp main_impl(text1, text2, check_lines, deadline) do
-    # Check for null inputs.
-    if is_nil(text1) || is_nil(text2) do
-      raise "Null inputs. (diff_main)"
-    end
-
+  @spec main_impl(String.t(), String.t(), boolean(), expiry()) :: difflist()
+  defp main_impl(text1, text2, check_lines, deadline)
+       when is_binary(text1) and is_binary(text2) do
     # Check for equality (speedup).
     if text1 == text2 do
       if text1 == "" do
@@ -99,7 +97,7 @@ defmodule Dmp.Diff do
       # Restore the prefix and suffix.
       diffs =
         if prefix != "" do
-          diffs ++ [{:equal, prefix}]
+          [{:equal, prefix} | diffs]
         else
           diffs
         end
@@ -111,7 +109,9 @@ defmodule Dmp.Diff do
           diffs
         end
 
-      cleanup_merge(diffs)
+      diffs = cleanup_merge(diffs)
+
+      diffs
     end
   end
 
@@ -128,7 +128,7 @@ defmodule Dmp.Diff do
 
   Returns a difflist.
   """
-  @spec compute(String.t(), String.t(), boolean(), non_neg_integer()) :: difflist()
+  @spec compute(String.t(), String.t(), boolean(), expiry()) :: difflist()
   def compute(text1, text2, check_lines, deadline) do
     text1_length = String.length(text1)
     text2_length = String.length(text2)
@@ -136,10 +136,12 @@ defmodule Dmp.Diff do
     cond do
       text1 == "" ->
         # Just add some text (speedup).
+
         [{:insert, text2}]
 
       text2 == "" ->
         # Just delete some text (speedup).
+
         [{:delete, text1}]
 
       true ->
@@ -159,12 +161,14 @@ defmodule Dmp.Diff do
             if shorttext_length == 1 do
               # Single character string.
               # After the previous speedup, the character can't be an equality.
+
               [{:delete, text1}, {:insert, text2}]
             else
               # Check to see if the problem can be split in two.
               case half_match(text1, text2, deadline) do
                 {text1_a, text1_b, text2_a, text2_b, mid_common} ->
                   # Send both pairs off for separate processing.
+
                   diffs_a = main_impl(text1_a, text2_a, check_lines, deadline)
                   diffs_b = main_impl(text1_b, text2_b, check_lines, deadline)
                   # Merge the results.
@@ -192,7 +196,7 @@ defmodule Dmp.Diff do
 
   Returns a difflist.
   """
-  @spec line_mode(String.t(), String.t(), non_neg_integer()) :: difflist()
+  @spec line_mode(String.t(), String.t(), expiry()) :: difflist()
   def line_mode(text1, text2, deadline) do
     # Scan the text on a line-by-line basis first.
     {text1, text2, line_array} = lines_to_chars(text1, text2)
@@ -220,6 +224,7 @@ defmodule Dmp.Diff do
   @type line_mode_acc :: {integer(), integer(), String.t(), String.t()}
 
   # Verified tail-recursive
+  @spec line_mode_loop(difflist(), line_mode_acc(), expiry()) :: difflist()
   defp line_mode_loop(
          %Cursor{current: nil} = diffs,
          _acc,
@@ -275,7 +280,7 @@ defmodule Dmp.Diff do
 
   Returns a difflist.
   """
-  @spec bisect(String.t(), String.t(), non_neg_integer()) :: difflist()
+  @spec bisect(String.t(), String.t(), expiry()) :: difflist()
   def bisect(text1, text2, deadline) do
     # Cache the text lengths to prevent multiple calls.
     text1_length = String.length(text1)
@@ -284,8 +289,8 @@ defmodule Dmp.Diff do
     v_offset = max_d
     v_length = 2 * max_d
 
-    {v1init, v2init} =
-      Enum.reduce(0..(v_length - 1), {%{}, %{}}, fn i, {m1, m2} ->
+    v1init =
+      Enum.reduce(0..(v_length - 1), [], fn i, acc ->
         val =
           if i == v_offset + 1 do
             0
@@ -293,8 +298,11 @@ defmodule Dmp.Diff do
             -1
           end
 
-        {Map.put(m1, i, val), Map.put(m2, i, val)}
+        [{i, val} | acc]
       end)
+
+    v2init = Map.new(v1init)
+    v1init = Map.new(v1init)
 
     # Offsets for start and end of k loop.
     # Prevents mapping of space beyond the grid.
@@ -306,8 +314,9 @@ defmodule Dmp.Diff do
       Enum.reduce_while(0..max_d, {v1init, v2init, 0, 0, 0, 0}, fn d,
                                                                    {v1, v2, k1start, k1end,
                                                                     k2start, k2end} ->
-        if deadline == 0 || :os.system_time(:millisecond) > deadline do
+        if is_integer(deadline) && :os.system_time(:millisecond) > deadline do
           # Bail out if deadline is reached.
+
           {:halt, nil}
         else
           # Walk the front path one step.
@@ -424,6 +433,7 @@ defmodule Dmp.Diff do
 
               if x1 >= x2 do
                 # Overlap detected.
+
                 {k1start, k1end, bisect_split(text1, text2, x1, y1, deadline)}
               else
                 {k1start, k1end, nil}
@@ -535,6 +545,7 @@ defmodule Dmp.Diff do
 
               if x1 >= x2 do
                 # Overlap detected.
+
                 {k2start, k2end, bisect_split(text1, text2, x1, y1, deadline)}
               else
                 {k2start, k2end, nil}
@@ -581,7 +592,7 @@ defmodule Dmp.Diff do
         ) :: {non_neg_integer(), non_neg_integer()}
   defp advance2(x2, y2, text1, text1_length, text2, text2_length) do
     if x2 < text1_length && y2 < text2_length &&
-         String.at(text1, text1_length - x2 - 1) == String.at(text2, text1_length - y2 - 1) do
+         String.at(text1, text1_length - x2 - 1) == String.at(text2, text2_length - y2 - 1) do
       advance2(x2 + 1, y2 + 1, text1, text1_length, text2, text2_length)
     else
       {x2, y2}

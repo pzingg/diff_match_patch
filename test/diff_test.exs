@@ -491,19 +491,15 @@ defmodule DiffTest do
 
   describe "bisect" do
     test "normal" do
-      a = "cat"
-      b = "map"
       # Since the resulting diff hasn't been normalized, it would be ok if
       # the insertion and deletion pairs are swapped.
       # If the order changes, tweak this test as required.
       assert [{:delete, "c"}, {:insert, "m"}, {:equal, "a"}, {:delete, "t"}, {:insert, "p"}] ==
-               Diff.bisect(a, b, one_second())
+               Diff.bisect("cat", "map", one_second())
     end
 
     test "zero timeout" do
-      a = "cat"
-      b = "map"
-      assert [{:delete, "cat"}, {:insert, "map"}] == Diff.bisect(a, b, 0)
+      assert [{:delete, "cat"}, {:insert, "map"}] == Diff.bisect("cat", "map", 0)
     end
   end
 
@@ -521,19 +517,16 @@ defmodule DiffTest do
                Diff.main("abc", "ab123c", false)
     end
 
-    @tag :skip
     test "simple deletion" do
       assert [{:equal, "a"}, {:delete, "123"}, {:equal, "bc"}] ==
                Diff.main("a123bc", "abc", false)
     end
 
-    @tag :skip
     test "two insertions" do
       assert [{:equal, "a"}, {:insert, "123"}, {:equal, "b"}, {:insert, "456"}, {:equal, "c"}] ==
                Diff.main("abc", "a123b456c", false)
     end
 
-    @tag :skip
     test "two deletions" do
       assert [{:equal, "a"}, {:delete, "123"}, {:equal, "b"}, {:delete, "456"}, {:equal, "c"}] ==
                Diff.main("a123b456c", "abc", false)
@@ -541,12 +534,11 @@ defmodule DiffTest do
 
     # Perform a real diff.
     # Switch off the timeout.
-    @tag :skip
+
     test "simple case 1" do
       assert [{:delete, "a"}, {:insert, "b"}] == Diff.main("a", "b", false, with_zero_timeout())
     end
 
-    @tag :skip
     test "simple case 2" do
       assert [
                {:delete, "Apple"},
@@ -563,7 +555,6 @@ defmodule DiffTest do
                )
     end
 
-    @tag :skip
     test "simple case 3" do
       assert [
                {:delete, "a"},
@@ -574,7 +565,6 @@ defmodule DiffTest do
              ] == Diff.main("ax\t", "\u0680x\x00", false, with_zero_timeout())
     end
 
-    @tag :skip
     test "overlap 1" do
       assert [
                {:delete, "1"},
@@ -586,13 +576,11 @@ defmodule DiffTest do
              ] == Diff.main("1ayb2", "abxab", false, with_zero_timeout())
     end
 
-    @tag :skip
     test "overlap 2" do
       assert [{:insert, "xaxcx"}, {:equal, "abc"}, {:delete, "y"}] ==
                Diff.main("abcy", "xaxcxabc", false, with_zero_timeout())
     end
 
-    @tag :skip
     test "overlap 3" do
       assert [
                {:delete, "ABCD"},
@@ -613,7 +601,6 @@ defmodule DiffTest do
                )
     end
 
-    @tag :skip
     test "large equality" do
       assert [
                {:insert, " "},
