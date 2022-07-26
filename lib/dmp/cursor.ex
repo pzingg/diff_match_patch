@@ -17,8 +17,10 @@ defmodule Dmp.Cursor do
           next: list()
         }
 
-  @type position_option() :: :reset | :first | :second
-  @type init_option() :: {:position, position_option()}
+  @typedoc "A value used to set the Cursor position."
+  @type position_value() :: -1 | non_neg_integer() | :last | :tail
+
+  @type init_option() :: {:position, position_value()}
   @type init_options() :: list(init_option())
 
   @doc """
@@ -37,7 +39,8 @@ defmodule Dmp.Cursor do
   @doc """
   Create a Cursor from a list of items.
 
-  `opts` - the keyword `:position` can specify `:reset`, `:first`, or `:second`
+  `opts` - the keyword `:position` can specify a position value,
+  such as `-1`, `0`, `1`, `:last`, or `tail`
   in order to set the position of the created Cursor.
 
   ## Examples
@@ -48,7 +51,7 @@ defmodule Dmp.Cursor do
       iex> Cursor.from_list([1, 2, 3]) |> Cursor.move_forward()
       %Cursor{current: 1, next: [2, 3], prev: []}
 
-      iex> Cursor.from_list([1, 2, 3], position: :second)
+      iex> Cursor.from_list([1, 2, 3], position: 1)
       %Cursor{current: 2, next: [3], prev: [1]}
 
   """
@@ -60,7 +63,8 @@ defmodule Dmp.Cursor do
   @doc """
   Create a Cursor from two lists.
 
-  `opts` - the keyword `:position` can specify `:reset`, `:first`, or `:second`
+  `opts` - the keyword `:position` can specify a position value,
+  such as `-1`, `0`, `1`, `:last`, or `tail`
   in order to set the position of the created Cursor.
 
   ## Examples
@@ -85,13 +89,9 @@ defmodule Dmp.Cursor do
   end
 
   @spec with_init_options(t(), init_options()) :: t()
-  defp with_init_options(%Cursor{} = c, []), do: c
-
   defp with_init_options(%Cursor{} = c, opts) do
-    case Keyword.get(opts, :position) do
-      :reset -> reset(c)
-      :first -> move_first(c)
-      :second -> move_second(c)
+    case Keyword.get(opts, :position, nil) do
+      pos when is_integer(pos) -> move_to(c, pos)
       _ -> c
     end
   end
@@ -252,7 +252,65 @@ defmodule Dmp.Cursor do
   def position(%Cursor{prev: prev}), do: Enum.count(prev)
 
   @doc """
+  Changes the current position of the Cursor.
+
+  `pos` - The desired position.
+
+      `-1` means the Cursor is positioned before the first item.
+      `0` means the Cursor is positioned at the first item (if it is not empty).
+      `:last` means the Cursor is positioned at the last item (if it is not empty).
+      `:tail` means the Cursor is positioned after the last item.
+
+  ## Examples
+
+    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(-1)
+    %Cursor{current: nil, next: [1, 2, 3, 4, 5], prev: []}
+
+    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(0)
+    %Cursor{current: 1, next: [2, 3, 4, 5], prev: []}
+
+    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(1)
+    %Cursor{current: 2, next: [3, 4, 5], prev: [1]}
+
+    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(:last)
+    %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
+
+    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(:tail)
+    %Cursor{current: nil, next: [], prev: [5, 4, 3, 2, 1]}
+
+  """
+  @spec move_to(t(), position_value()) :: t()
+  def move_to(%Cursor{prev: prev, current: current, next: next}, :tail) do
+    current_and_next =
+      if is_nil(current) do
+        prev
+      else
+        [current | next]
+      end
+
+    %Cursor{prev: Enum.reverse(current_and_next) ++ prev, current: nil, next: []}
+  end
+
+  def move_to(%Cursor{} = c, :last), do: c |> move_to(:tail) |> move_back(1)
+
+  def move_to(%Cursor{prev: prev, current: current, next: next}, -1) do
+    current_and_next =
+      if is_nil(current) do
+        next
+      else
+        [current | next]
+      end
+
+    %Cursor{prev: [], current: nil, next: Enum.reverse(prev) ++ current_and_next}
+  end
+
+  def move_to(%Cursor{} = c, pos) when is_integer(pos) and pos >= 0 do
+    c |> move_to(-1) |> move_forward(pos + 1)
+  end
+
+  @doc """
   Resets the position of the Cursor to before the first item.
+  Alias for `move_to(c, -1)`.
 
   ## Examples
 
@@ -269,20 +327,11 @@ defmodule Dmp.Cursor do
       %Cursor{current: nil, next: [1, 2, 3, 4, 5], prev: []}
 
   """
-  @spec reset(t()) :: t()
-  def reset(%Cursor{prev: prev, current: current, next: next}) do
-    all_next =
-      if is_nil(current) do
-        Enum.reverse(prev) ++ next
-      else
-        Enum.reverse(prev) ++ [current | next]
-      end
-
-    %Cursor{prev: [], current: nil, next: all_next}
-  end
+  def reset(%Cursor{} = c), do: move_to(c, -1)
 
   @doc """
   Moves the position of the Cursor to the first item.
+  Alias of `move_to(c, 0)`.
 
   ## Examples
 
@@ -300,47 +349,7 @@ defmodule Dmp.Cursor do
 
   """
   @spec move_first(t()) :: t()
-  def move_first(%Cursor{prev: prev, current: current, next: next}) do
-    all_next =
-      if is_nil(current) do
-        Enum.reverse(prev) ++ next
-      else
-        Enum.reverse(prev) ++ [current | next]
-      end
-
-    {next_cur, next_next} =
-      case all_next do
-        [] -> {nil, []}
-        [next_cur | to_next] -> {next_cur, to_next}
-      end
-
-    %Cursor{prev: [], current: next_cur, next: next_next}
-  end
-
-  @doc """
-  Moves the position of the Cursor to the second item.
-
-  ## Examples
-
-      iex> Cursor.new() |> Cursor.move_second()
-      %Cursor{current: nil, next: [], prev: []}
-
-      iex> Cursor.from_list([1]) |> Cursor.move_second()
-      %Cursor{current: nil, next: [], prev: [1]}
-
-      iex> Cursor.from_list([1, 2]) |> Cursor.move_second()
-      %Cursor{current: 2, next: [], prev: [1]}
-
-      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_second()
-      %Cursor{current: 2, next: [3, 4, 5], prev: [1]}
-
-  """
-  @spec move_second(t()) :: t()
-  def move_second(%Cursor{} = c) do
-    c
-    |> move_first()
-    |> move_forward()
-  end
+  def move_first(%Cursor{} = c), do: move_to(c, 0)
 
   @doc """
   Moves the position of the Cursor forward a number of steps.

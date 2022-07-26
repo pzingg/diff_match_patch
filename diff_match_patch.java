@@ -111,8 +111,8 @@ public class diff_match_patch {
   /**
    * Find the differences between two texts.
    * Run a faster, slightly less optimal diff.
-   * This method allows the 'checklines' of diff_main() to be optional.
-   * Most of the time checklines is wanted, so default to true.
+   * This method allows the 'check_lines' of diff_main() to be optional.
+   * Most of the time check_lines is wanted, so default to true.
    * @param text1 Old string to be diffed.
    * @param text2 New string to be diffed.
    * @return Linked List of Diff objects.
@@ -125,13 +125,13 @@ public class diff_match_patch {
    * Find the differences between two texts.
    * @param text1 Old string to be diffed.
    * @param text2 New string to be diffed.
-   * @param checklines Speedup flag.  If false, then don't run a
+   * @param check_lines Speedup flag.  If false, then don't run a
    *     line-level diff first to identify the changed areas.
    *     If true, then run a faster slightly less optimal diff.
    * @return Linked List of Diff objects.
    */
   public LinkedList<Diff> diff_main(String text1, String text2,
-                                    boolean checklines) {
+                                    boolean check_lines) {
     // Set a deadline by which time the diff must be complete.
     long deadline;
     if (Diff_Timeout <= 0) {
@@ -139,7 +139,7 @@ public class diff_match_patch {
     } else {
       deadline = System.currentTimeMillis() + (long) (Diff_Timeout * 1000);
     }
-    return diff_main(text1, text2, checklines, deadline);
+    return diff_main(text1, text2, check_lines, deadline);
   }
 
   /**
@@ -147,7 +147,7 @@ public class diff_match_patch {
    * stripping any common prefix or suffix off the texts before diffing.
    * @param text1 Old string to be diffed.
    * @param text2 New string to be diffed.
-   * @param checklines Speedup flag.  If false, then don't run a
+   * @param check_lines Speedup flag.  If false, then don't run a
    *     line-level diff first to identify the changed areas.
    *     If true, then run a faster slightly less optimal diff.
    * @param deadline Time when the diff should be complete by.  Used
@@ -155,7 +155,7 @@ public class diff_match_patch {
    * @return Linked List of Diff objects.
    */
   private LinkedList<Diff> diff_main(String text1, String text2,
-                                     boolean checklines, long deadline) {
+                                     boolean check_lines, long deadline) {
     // Check for null inputs.
     if (text1 == null || text2 == null) {
       throw new IllegalArgumentException("Null inputs. (diff_main)");
@@ -184,7 +184,7 @@ public class diff_match_patch {
     text2 = text2.substring(0, text2.length() - commonlength);
 
     // Compute the diff on the middle block.
-    diffs = diff_compute(text1, text2, checklines, deadline);
+    diffs = diff_compute(text1, text2, check_lines, deadline);
 
     // Restore the prefix and suffix.
     if (commonprefix.length() != 0) {
@@ -203,14 +203,14 @@ public class diff_match_patch {
    * have any common prefix or suffix.
    * @param text1 Old string to be diffed.
    * @param text2 New string to be diffed.
-   * @param checklines Speedup flag.  If false, then don't run a
+   * @param check_lines Speedup flag.  If false, then don't run a
    *     line-level diff first to identify the changed areas.
    *     If true, then run a faster slightly less optimal diff.
    * @param deadline Time when the diff should be complete by.
    * @return Linked List of Diff objects.
    */
   private LinkedList<Diff> diff_compute(String text1, String text2,
-                                        boolean checklines, long deadline) {
+                                        boolean check_lines, long deadline) {
     LinkedList<Diff> diffs = new LinkedList<Diff>();
 
     if (text1.length() == 0) {
@@ -257,9 +257,9 @@ public class diff_match_patch {
       String mid_common = hm[4];
       // Send both pairs off for separate processing.
       LinkedList<Diff> diffs_a = diff_main(text1_a, text2_a,
-                                           checklines, deadline);
+                                           check_lines, deadline);
       LinkedList<Diff> diffs_b = diff_main(text1_b, text2_b,
-                                           checklines, deadline);
+                                           check_lines, deadline);
       // Merge the results.
       diffs = diffs_a;
       diffs.add(new Diff(Operation.EQUAL, mid_common));
@@ -267,7 +267,7 @@ public class diff_match_patch {
       return diffs;
     }
 
-    if (checklines && text1.length() > 100 && text2.length() > 100) {
+    if (check_lines && text1.length() > 100 && text2.length() > 100) {
       return diff_lineMode(text1, text2, deadline);
     }
 

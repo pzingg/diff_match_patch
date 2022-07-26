@@ -261,7 +261,7 @@ defmodule Dmp.Patch do
 
     {patches, patch, prepatch_text} =
       diffs
-      |> Cursor.from_list(position: :first)
+      |> Cursor.from_list(position: 0)
       |> make_loop({[], %Patch{}, text1, text1, 0, 0}, patch_margin, match_max_bits)
 
     if patch.diffs != [] do
@@ -521,7 +521,7 @@ defmodule Dmp.Patch do
   `max_match_bits` - The number of bits in an int.
   """
   def split_max(patches, match_max_bits, patch_margin) do
-    cursor = Cursor.from_list(patches, position: :first)
+    cursor = Cursor.from_list(patches, position: 0)
     check_split(cursor, match_max_bits, patch_margin)
   end
 
@@ -747,7 +747,7 @@ defmodule Dmp.Patch do
   def from_string(text) do
     text
     |> String.split("\n")
-    |> Cursor.from_list(position: :first)
+    |> Cursor.from_list(position: 0)
     |> parse_patch_header([])
     |> Enum.reverse()
   end

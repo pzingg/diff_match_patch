@@ -1,12 +1,17 @@
 defmodule DiffTest do
   use ExUnit.Case
 
-  alias Dmp.Diff
+  alias Dmp.{Diff, Options}
 
   # doctest Dmp.Diff
 
   defp one_second() do
     :os.system_time(:millisecond) + 1_000
+  end
+
+  defp with_zero_timeout() do
+    opts = %Options{}
+    %Options{opts | diff_timeout: 0}
   end
 
   # Construct the two texts which made up the diff originally.
@@ -466,6 +471,163 @@ defmodule DiffTest do
       ]
 
       assert [{:delete, "abwxyzcd"}, {:insert, "12wxyz34"}] == Diff.cleanup_efficiency(diffs, 5)
+    end
+  end
+
+  test "compute the source and destination texts" do
+    diffs = [
+      {:equal, "jump"},
+      {:delete, "s"},
+      {:insert, "ed"},
+      {:equal, " over "},
+      {:delete, "the"},
+      {:insert, "a"},
+      {:equal, " lazy"}
+    ]
+
+    assert "jumps over the lazy" == Diff.text1(diffs)
+    assert "jumped over a lazy" == Diff.text2(diffs)
+  end
+
+  describe "bisect" do
+    test "normal" do
+      a = "cat"
+      b = "map"
+      # Since the resulting diff hasn't been normalized, it would be ok if
+      # the insertion and deletion pairs are swapped.
+      # If the order changes, tweak this test as required.
+      assert [{:delete, "c"}, {:insert, "m"}, {:equal, "a"}, {:delete, "t"}, {:insert, "p"}] ==
+               Diff.bisect(a, b, one_second())
+    end
+
+    test "zero timeout" do
+      a = "cat"
+      b = "map"
+      assert [{:delete, "cat"}, {:insert, "map"}] == Diff.bisect(a, b, 0)
+    end
+  end
+
+  describe "main" do
+    test "null case" do
+      assert [] == Diff.main("", "", false)
+    end
+
+    test "equality" do
+      assert [{:equal, "abc"}] == Diff.main("abc", "abc", false)
+    end
+
+    test "simple insertion" do
+      assert [{:equal, "ab"}, {:insert, "123"}, {:equal, "c"}] ==
+               Diff.main("abc", "ab123c", false)
+    end
+
+    @tag :skip
+    test "simple deletion" do
+      assert [{:equal, "a"}, {:delete, "123"}, {:equal, "bc"}] ==
+               Diff.main("a123bc", "abc", false)
+    end
+
+    @tag :skip
+    test "two insertions" do
+      assert [{:equal, "a"}, {:insert, "123"}, {:equal, "b"}, {:insert, "456"}, {:equal, "c"}] ==
+               Diff.main("abc", "a123b456c", false)
+    end
+
+    @tag :skip
+    test "two deletions" do
+      assert [{:equal, "a"}, {:delete, "123"}, {:equal, "b"}, {:delete, "456"}, {:equal, "c"}] ==
+               Diff.main("a123b456c", "abc", false)
+    end
+
+    # Perform a real diff.
+    # Switch off the timeout.
+    @tag :skip
+    test "simple case 1" do
+      assert [{:delete, "a"}, {:insert, "b"}] == Diff.main("a", "b", false, with_zero_timeout())
+    end
+
+    @tag :skip
+    test "simple case 2" do
+      assert [
+               {:delete, "Apple"},
+               {:insert, "Banana"},
+               {:equal, "s are a"},
+               {:insert, "lso"},
+               {:equal, " fruit."}
+             ] ==
+               Diff.main(
+                 "Apples are a fruit.",
+                 "Bananas are also fruit.",
+                 false,
+                 with_zero_timeout()
+               )
+    end
+
+    @tag :skip
+    test "simple case 3" do
+      assert [
+               {:delete, "a"},
+               {:insert, "\u0680"},
+               {:equal, "x"},
+               {:delete, "\t"},
+               {:insert, "\x00"}
+             ] == Diff.main("ax\t", "\u0680x\x00", false, with_zero_timeout())
+    end
+
+    @tag :skip
+    test "overlap 1" do
+      assert [
+               {:delete, "1"},
+               {:equal, "a"},
+               {:delete, "y"},
+               {:equal, "b"},
+               {:delete, "2"},
+               {:insert, "xab"}
+             ] == Diff.main("1ayb2", "abxab", false, with_zero_timeout())
+    end
+
+    @tag :skip
+    test "overlap 2" do
+      assert [{:insert, "xaxcx"}, {:equal, "abc"}, {:delete, "y"}] ==
+               Diff.main("abcy", "xaxcxabc", false, with_zero_timeout())
+    end
+
+    @tag :skip
+    test "overlap 3" do
+      assert [
+               {:delete, "ABCD"},
+               {:equal, "a"},
+               {:delete, "="},
+               {:insert, "-"},
+               {:equal, "bcd"},
+               {:delete, "="},
+               {:insert, "-"},
+               {:equal, "efghijklmnopqrs"},
+               {:delete, "EFGHIJKLMNOefg"}
+             ] ==
+               Diff.main(
+                 "ABCDa=bcd=efghijklmnopqrsEFGHIJKLMNOefg",
+                 "a-bcd-efghijklmnopqrs",
+                 false,
+                 with_zero_timeout()
+               )
+    end
+
+    @tag :skip
+    test "large equality" do
+      assert [
+               {:insert, " "},
+               {:equal, "a"},
+               {:insert, "nd"},
+               {:equal, " [[Pennsylvania]]"},
+               {:delete, " and [[New"}
+             ] ==
+               Diff.main(
+                 "a [[Pennsylvania]] and [[New",
+                 " and [[Pennsylvania]]",
+                 false,
+                 with_zero_timeout()
+               )
     end
   end
 end
