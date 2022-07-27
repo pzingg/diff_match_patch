@@ -12,14 +12,14 @@ defmodule Dmp.Match do
   @type options() :: Options.t()
 
   @doc """
-  Locate the best instance of 'pattern' in 'text' near 'loc'.
-  Returns -1 if no match found.
+  Locate the best instance of `pattern` in `text` near `loc`.
 
-  `text` The text to search.
-  `pattern` The pattern to search for.
-  `loc` The location to search around.
-  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use the
-    defaults.
+  `text` - The text to search.
+  `pattern` - The pattern to search for.
+  `loc` - The location to search around.
+  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use the defaults.
+
+  Returns -1 if no match found.
   """
   @spec main(String.t(), String.t(), non_neg_integer(), nil | options()) :: integer()
   def main(text, pattern, loc, opts \\ nil) do
@@ -52,12 +52,11 @@ defmodule Dmp.Match do
   end
 
   @doc """
-  Locate the best instance of 'pattern' in 'text' near 'loc' using the
-  #Bitap algorithm.  Returns -1 if no match found.
+  Locate the best instance of `pattern` in `text` near `loc` using the Bitap algorithm.
 
-  `text` The text to search.
-  `pattern` The pattern to search for.
-  `loc` The location to search around.
+  `text` - The text to search.
+  `pattern` - The pattern to search for.
+  `loc` - The location to search around.
   `match_threshold` - At what point is no match declared (0.0 = perfection, 1.0 = very loose, default = 0.5).
   `match_distance` - How far to search for a match (0 = exact location, 1000+ = broad match, default = 1000).
 
@@ -82,7 +81,6 @@ defmodule Dmp.Match do
 
         best_loc_1 ->
           score_1 = bitap_score(0, best_loc_1, loc, pattern_length, match_distance)
-          IO.inspect(score_1, label: "score_1")
           score_1 = min(score_1, match_threshold)
 
           # What about in the other direction? (speedup)
@@ -92,12 +90,9 @@ defmodule Dmp.Match do
 
             best_loc_2 ->
               score_2 = bitap_score(0, best_loc_2, loc, pattern_length, match_distance)
-              IO.inspect(score_2, label: "score_2")
               min(score_2, score_1)
           end
       end
-
-    IO.inspect({best_loc, score_threshold}, label: "best_loc, score_threshold")
 
     # Initialise the bit arrays.
     matchmask = 1 <<< (pattern_length - 1)
@@ -111,6 +106,7 @@ defmodule Dmp.Match do
           # Run a binary search to determine how far from 'loc' we can stray at
           # this error level.
           # Use the result from this iteration as the maximum for the next.
+
           bin_max =
             bin_mid =
             bin_score(
@@ -126,29 +122,29 @@ defmodule Dmp.Match do
 
           finish = min(loc + bin_mid, text_length) + pattern_length
           start = max(1, loc - bin_mid + 1)
-          rd_0 = %{(finish + 1) => 1 <<< (d - 1)}
+          rd = %{(finish + 1) => (1 <<< d) - 1}
 
           {best_loc, score_threshold, rd, _start} =
-            Enum.reduce_while(finish..0//-1, {best_loc, score_threshold, rd_0, start}, fn j,
-                                                                                          {best_loc,
-                                                                                           score_threshold,
-                                                                                           rd,
-                                                                                           start} ->
+            Enum.reduce_while(finish..0//-1, {best_loc, score_threshold, rd, start}, fn j,
+                                                                                        {best_loc,
+                                                                                         score_threshold,
+                                                                                         rd,
+                                                                                         start} ->
               if j < start do
                 {:halt, {best_loc, score_threshold, rd, start}}
               else
-                ch = String.at(text, j - 1)
-                char_match = Map.get(s, ch, 0)
+                char_match = char_bitmask_at(s, text, j - 1)
+                rd_j_1 = (Map.get(rd, j + 1, 0) <<< 1 ||| 1) &&& char_match
 
                 rd_j =
                   if d == 0 do
                     # First pass: exact match.
-                    (Map.get(rd, j + 1, 0) ||| 1) &&& char_match
+                    rd_j_1
                   else
                     # Subsequent passes: fuzzy match.
-                    ((Map.get(rd, j + 1) <<< 1 ||| 1) &&& char_match) |||
-                      ((Map.get(last_rd, j + 1) ||| Map.get(last_rd, j)) <<< 1 ||| 1) |||
-                      Map.get(last_rd, j + 1)
+                    last_rd_j_1 = Map.get(last_rd, j + 1, 0)
+                    last_rd_j = Map.get(last_rd, j, 0) ||| last_rd_j_1
+                    rd_j_1 ||| (last_rd_j <<< 1 ||| 1) ||| last_rd_j_1
                   end
 
                 rd = Map.put(rd, j, rd_j)
@@ -164,9 +160,11 @@ defmodule Dmp.Match do
                     if best_loc > loc do
                       # When passing loc, don't exceed our current distance from loc.
                       start = max(1, 2 * loc - best_loc)
+
                       {:cont, {best_loc, score, rd, start}}
                     else
                       # Already passed loc, downhill from here on in.
+
                       {:halt, {best_loc, score, rd, start}}
                     end
                   else
@@ -178,7 +176,9 @@ defmodule Dmp.Match do
               end
             end)
 
-          if bitap_score(d + 1, loc, loc, pattern_length, match_distance) > score_threshold do
+          test_score = bitap_score(d + 1, loc, loc, pattern_length, match_distance)
+
+          if test_score > score_threshold do
             # No hope for a (better) match at greater error levels.
             {:halt, {best_loc, score_threshold, rd, bin_max}}
           else
@@ -188,6 +188,20 @@ defmodule Dmp.Match do
       )
 
     best_loc
+  end
+
+  defp char_bitmask_at(s, text, index) do
+    case String.at(text, index) do
+      nil ->
+        0
+
+      "" ->
+        0
+
+      ch ->
+        ord = String.to_charlist(ch) |> List.first()
+        Map.get(s, ord, 0)
+    end
   end
 
   @spec bin_score(
@@ -200,6 +214,7 @@ defmodule Dmp.Match do
           float(),
           non_neg_integer()
         ) :: non_neg_integer()
+  # Verified tail-recursive
   def bin_score(
         bin_min,
         bin_mid,

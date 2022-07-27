@@ -5,6 +5,11 @@ defmodule MatchTest do
 
   # doctest Dmp.Match
 
+  defp with_match_threshold(t) do
+    opts = %Options{}
+    %Options{opts | match_threshold: t}
+  end
+
   describe "alphabet" do
     test "abc" do
       assert %{?a => 4, ?b => 2, ?c => 1} = Match.alphabet("abc")
@@ -20,123 +25,103 @@ defmodule MatchTest do
       assert 5 == Match.bitap("abcdefghijk", "fgh", 5, 0.5, 100)
     end
 
-    @tag :skip
     test "exact match 2" do
       assert 5 == Match.bitap("abcdefghijk", "fgh", 0, 0.5, 100)
     end
 
-    @tag :skip
     test "fuzzy match 1" do
       assert 4 == Match.bitap("abcdefghijk", "efxhi", 0, 0.5, 100)
     end
 
-    @tag :skip
     test "fuzzy match 2" do
       assert 2 == Match.bitap("abcdefghijk", "cdefxyhijk", 5, 0.5, 100)
     end
 
-    @tag :skip
     test "fuzzy match 3" do
       assert -1 == Match.bitap("abcdefghijk", "bxy", 1, 0.5, 100)
     end
 
-    @tag :skip
     test "overflow 1" do
       assert 2 == Match.bitap("123456789xx0", "3456789x0", 2, 0.5, 100)
     end
 
-    @tag :skip
     test "overflow 2" do
       assert 0 == Match.bitap("abcdef", "xxabc", 4, 0.5, 100)
     end
 
-    @tag :skip
     test "overflow 3" do
       assert 3 == Match.bitap("abcdef", "defyy", 4, 0.5, 100)
     end
 
-    @tag :skip
     test "overflow 4" do
       assert 0 == Match.bitap("abcdef", "xabcdefy", 0, 0.5, 100)
     end
 
-    @tag :skip
     test "threshold 0.4" do
       assert 4 == Match.bitap("abcdefghijk", "efxyhi", 1, 0.4, 100)
     end
 
-    @tag :skip
     test "threshold 0.3" do
       assert -1 == Match.bitap("abcdefghijk", "efxyhi", 1, 0.3, 100)
     end
 
-    @tag :skip
     test "threshold 0" do
       assert 1 == Match.bitap("abcdefghijk", "bcdef", 1, 0, 100)
     end
 
-    @tag :skip
     test "multiple select 1" do
       assert 0 == Match.bitap("abcdexyzabcde", "abccde", 3, 0.5, 100)
     end
 
-    @tag :skip
     test "multiple select 2" do
       assert 8 == Match.bitap("abcdexyzabcde", "abccde", 5, 0.5, 100)
     end
 
-    @tag :skip
     test "strict distance 1" do
       assert -1 == Match.bitap("abcdefghijklmnopqrstuvwxyz", "abcdefg", 24, 0.5, 10)
     end
 
-    @tag :skip
     test "strict distance 2" do
       assert 0 == Match.bitap("abcdefghijklmnopqrstuvwxyz", "abcdxxefg", 1, 0.5, 10)
     end
 
-    @tag :skip
     test "loose distance" do
       assert 0 == Match.bitap("abcdefghijklmnopqrstuvwxyz", "abcdefg", 24, 0.5, 1000)
     end
   end
 
   describe "main" do
-    @tag :skip
     test "shortcut match 1" do
       assert 0 == Match.main("abcdef", "abcdef", 1000)
     end
 
-    @tag :skip
     test "shortcut match 2" do
       assert -1 == Match.main("", "abcdef", 1)
     end
 
-    @tag :skip
     test "shortcut match 3" do
       assert 3 == Match.main("abcdef", "", 3)
     end
 
-    @tag :skip
     test "shortcut match 4" do
       assert 3 == Match.main("abcdef", "de", 3)
     end
 
-    @tag :skip
     test "shortcut match 5" do
       assert 3 == Match.main("abcdef", "defy", 4)
     end
 
-    @tag :skip
     test "shortcut match 6" do
       assert 0 == Match.main("abcdef", "abcdefy", 0)
     end
 
-    @tag :skip
     test "complex match" do
       assert 4 ==
-               Match.main("I am the very model of a modern major general.", " that berry ", 5,
-                 match_threshold: 0.7
+               Match.main(
+                 "I am the very model of a modern major general.",
+                 " that berry ",
+                 5,
+                 with_match_threshold(0.7)
                )
     end
   end
