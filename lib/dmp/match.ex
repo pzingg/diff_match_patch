@@ -7,7 +7,7 @@ defmodule Dmp.Match do
 
   import Dmp.StringUtils
 
-  alias Dmp.{Cursor, Options}
+  alias Dmp.Options
 
   @type options() :: Options.t()
 

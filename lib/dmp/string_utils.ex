@@ -138,4 +138,50 @@ defmodule Dmp.StringUtils do
       ""
     end
   end
+
+  @doc """
+  A URI encoding, but with plus signs decoded, for use with diffs.
+  """
+  @spec uri_encode(String.t()) :: String.t()
+  def uri_encode(str) do
+    URI.encode(str) |> String.replace("+", " ")
+  end
+
+  @encoding_map [
+    {"%21", "!"},
+    {"%7E", "~"},
+    {"%27", "'"},
+    {"%28", "("},
+    {"%29", ")"},
+    {"%3B", ";"},
+    {"%2F", "/"},
+    {"%3F", "?"},
+    {"%3A", ":"},
+    {"%40", "@"},
+    {"%26", "&"},
+    {"%3D", "="},
+    {"%2B", "+"},
+    {"%24", "$"},
+    {"%2C", ","},
+    {"%23", "#"}
+  ]
+
+  @doc """
+  Unescape selected chars for compatability with JavaScript's encodeURI.
+  In speed critical applications this could be dropped since the
+  receiving application will certainly decode these fine.
+  Note that this function is case-sensitive.  Thus "%3f" would not be
+  unescaped.  But this is ok because it is only called with the output of
+  `URI.encode` which returns uppercase hex.
+
+  Example: "%3F" -> "?", "%24" -> "$", etc.
+
+  `str` The string to escape.
+
+  Returns the unescaped string.
+  """
+  @spec unescape_for_encode_uri_compatability(String.t()) :: String.t()
+  def unescape_for_encode_uri_compatability(str) do
+    Enum.reduce(@encoding_map, str, fn {from, to}, acc -> String.replace(acc, from, to) end)
+  end
 end

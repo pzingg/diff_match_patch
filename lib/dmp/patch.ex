@@ -75,49 +75,11 @@ defmodule Dmp.Patch do
               " "
           end
 
-        text = URI.encode(text) |> String.replace("+", " ")
+        text = uri_encode(text)
         acc <> op_text <> text <> "\n"
       end)
-      |> Patch.unescape_for_encode_uri_compatability()
+      |> unescape_for_encode_uri_compatability()
     end
-  end
-
-  @doc """
-  Unescape selected chars for compatability with JavaScript's encodeURI.
-  In speed critical applications this could be dropped since the
-  receiving application will certainly decode these fine.
-  Note that this function is case-sensitive.  Thus "%3f" would not be
-  unescaped.  But this is ok because it is only called with the output of
-  `URI.encode` which returns uppercase hex.
-
-  Example: "%3F" -> "?", "%24" -> "$", etc.
-
-  `str` The string to escape.
-
-  Returns the unescaped string.
-  """
-
-  @encoding_map [
-    {"%21", "!"},
-    {"%7E", "~"},
-    {"%27", "'"},
-    {"%28", "("},
-    {"%29", ")"},
-    {"%3B", ";"},
-    {"%2F", "/"},
-    {"%3F", "?"},
-    {"%3A", ":"},
-    {"%40", "@"},
-    {"%26", "&"},
-    {"%3D", "="},
-    {"%2B", "+"},
-    {"%24", "$"},
-    {"%2C", ","},
-    {"%23", "#"}
-  ]
-
-  def unescape_for_encode_uri_compatability(str) do
-    Enum.reduce(@encoding_map, str, fn {from, to}, acc -> String.replace(acc, from, to) end)
   end
 
   @doc """
@@ -207,6 +169,7 @@ defmodule Dmp.Patch do
 
   Returns list of Patch objects.
   """
+  @spec from_texts(String.t(), String.t()) :: patchlist()
   def from_texts(text1, text2, opts \\ nil) do
     opts = opts || Options.default()
     diff_edit_cost = Map.fetch!(opts, :diff_edit_cost)
@@ -869,10 +832,10 @@ defmodule Dmp.Patch do
   """
   @patch_header ~r/^@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@$/
 
-  @spec from_string(String.t()) :: patchlist()
-  def from_string(""), do: []
+  @spec from_text(String.t()) :: patchlist()
+  def from_text(""), do: []
 
-  def from_string(text) do
+  def from_text(text) do
     text
     |> String.split("\n")
     |> Cursor.from_list(position: 0)

@@ -1860,6 +1860,54 @@ defmodule Dmp.Diff do
   end
 
   @doc """
+  Given `loc`, a location in `text1`, compute and return the equivalent location in
+  `text2`. e.g. "The cat" vs "The big cat", 1->1, 5->8.
+
+  `diffs` - a difflist.
+  `loc` - Location within `text1`.
+
+  Returns location within `text2`.
+  """
+  @spec x_index(difflist(), non_neg_integer()) :: non_neg_integer()
+  def x_index(diffs, loc) do
+    {last_diff, _chars1, _chars2, last_chars1, last_chars2} =
+      Enum.reduce_while(diffs, {nil, 0, 0, 0, 0}, fn {op, text} = diff,
+                                                     {_last_diff, chars1, chars2, last_chars1,
+                                                      last_chars2} ->
+        text_length = String.length(text)
+
+        {chars1, chars2} =
+          case op do
+            :equal ->
+              {chars1 + text_length, chars2 + text_length}
+
+            :insert ->
+              {chars1, chars2 + text_length}
+
+            :delete ->
+              {chars1 + text_length, chars2}
+          end
+
+        if chars1 > loc do
+          # Overshot the location.
+          {:halt, {diff, chars1, chars2, last_chars1, last_chars2}}
+        else
+          {:cont, {nil, chars1, chars2, chars1, chars2}}
+        end
+      end)
+
+    case last_diff do
+      {:delete, _} ->
+        # The location was deleted
+        last_chars2
+
+      _ ->
+        # Add the remaining character length.
+        last_chars2 + (loc - last_chars1)
+    end
+  end
+
+  @doc """
   Compute and return the source text (all equalities and deletions).
 
   `diffs` - a difflist.
@@ -1893,5 +1941,140 @@ defmodule Dmp.Diff do
         acc
       end
     end)
+  end
+
+  @doc """
+  Compute the Levenshtein distance; the number of inserted, deleted or
+  substituted characters.
+
+  @param diffs List of Diff objects.
+  @return Number of changes.
+  """
+  @spec levenshtein(difflist()) :: non_neg_integer()
+  def levenshtein(diffs) do
+    {levenshtein, insertions, deletions} =
+      Enum.reduce(diffs, {0, 0, 0}, fn {op, text}, {levenshtein, insertions, deletions} ->
+        text_length = String.length(text)
+
+        case op do
+          :insert ->
+            {levenshtein, insertions + text_length, deletions}
+
+          :delete ->
+            {levenshtein, text_length, deletions + text_length}
+
+          :equal ->
+            # A deletion and an insertion is one substitution.
+            {levenshtein + max(insertions, deletions), 0, 0}
+        end
+      end)
+
+    levenshtein + max(insertions, deletions)
+  end
+
+  @doc """
+  Crush the diff into an encoded string which describes the operations
+  required to transform text1 into text2.
+
+  E.g. "=3\t-2\t+ing" -> Keep 3 chars, delete 2 chars, insert "ing".
+
+  Operations are tab-separated.  Inserted text is escaped using %xx notation.
+
+  `diffs` - a difflist.
+
+  Returns delta text.
+  """
+  @spec to_delta(difflist()) :: String.t()
+  def to_delta(diffs) do
+    delta =
+      Enum.reduce(diffs, "", fn {op, text}, acc ->
+        case op do
+          :insert ->
+            acc <> "+" <> uri_encode(text) <> "\t"
+
+          :delete ->
+            acc <> "-#{String.length(text)}\t"
+
+          :equal ->
+            acc <> "=#{String.length(text)}\t"
+        end
+      end)
+
+    # Strip off trailing tab character.
+    delta
+    |> String.replace_suffix("\t", "")
+    |> unescape_for_encode_uri_compatability()
+  end
+
+  @doc """
+  Given the original `text1`, and an encoded string which describes the
+  operations required to transform `text1` into `text2`, compute the full diff.
+
+  `text1 Source string for the diff.
+  `delta Delta text.
+
+  Returns difflist. or nil if invalid.
+  """
+  @spec from_delta(String.t(), String.t()) :: nil | difflist()
+  def from_delta(text1, delta) do
+    text1_length = String.length(text1)
+
+    {diffs, pointer} =
+      String.split(delta, "\t")
+      |> Enum.reduce({[], 0}, fn
+        "", acc ->
+          # Blank tokens are ok (from a trailing \t)
+          acc
+
+        token, {diffs, pointer} ->
+          # Each token begins with a one character parameter which specifies the
+          # operation of this token (delete, insert, equality).
+          {op, param} = String.split_at(token, 1)
+
+          case op do
+            "+" ->
+              # decode would change all "+" to " "
+              param = String.replace(param, "+", "%2B") |> URI.decode()
+              {[{:insert, param} | diffs], pointer}
+
+            _ ->
+              n =
+                case Integer.parse(param) do
+                  {n, ""} ->
+                    cond do
+                      n < 0 ->
+                        raise "Negative number in from_delta: #{param}"
+
+                      pointer + n > text1_length ->
+                        raise "Delta length (#{pointer}) larger than source text length (#{text1_length})"
+
+                      true ->
+                        n
+                    end
+
+                  _ ->
+                    raise "Invalid number in from_delta: #{param}"
+                end
+
+              text = substring(text1, pointer, pointer + n)
+
+              case op do
+                "=" ->
+                  {[{:equal, text} | diffs], pointer + n}
+
+                "-" ->
+                  {[{:delete, text} | diffs], pointer + n}
+
+                _ ->
+                  raise "Invalid diff operation in diff_fromDelta: #{op}"
+              end
+          end
+      end)
+
+    if pointer != text1_length do
+      raise "Delta length (#{pointer}) smaller than source text length (#{text1_length})"
+    end
+
+    Enum.reverse(diffs)
   end
 end

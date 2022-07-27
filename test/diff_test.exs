@@ -1,8 +1,6 @@
 defmodule DiffTest do
   use ExUnit.Case
 
-  @moduletag :good
-
   alias Dmp.{Diff, Options}
 
   # doctest Dmp.Diff
@@ -489,6 +487,109 @@ defmodule DiffTest do
 
     assert "jumps over the lazy" == Diff.text1(diffs)
     assert "jumped over a lazy" == Diff.text2(diffs)
+  end
+
+  describe "delta" do
+    test "1" do
+      diffs = [
+        {:equal, "jump"},
+        {:delete, "s"},
+        {:insert, "ed"},
+        {:equal, " over "},
+        {:delete, "the"},
+        {:insert, "a"},
+        {:equal, " lazy"},
+        {:insert, "old dog"}
+      ]
+
+      text1 = Diff.text1(diffs)
+      assert "jumps over the lazy" == text1
+
+      delta = Diff.to_delta(diffs)
+      assert "=4\t-1\t+ed\t=6\t-3\t+a\t=5\t+old dog" == delta
+
+      # Convert delta string into a diff.
+      assert diffs == Diff.from_delta(text1, delta)
+
+      # Generates error (19 != 20).
+      assert_raise RuntimeError, "", fn -> Diff.from_delta(text1 + "x", delta) end
+
+      # Generates error (19 != 18).
+      assert_raise RuntimeError, "", fn -> Diff.from_delta(String.slice(text1, 1, -1), delta) end
+    end
+
+    # Generates error (%c3%xy invalid Unicode).
+    # Note: Python 3 can decode this.
+    # try:
+    #  Diff.from_delta("", "+%c3xy")
+    #  self.assertFalse(True)
+    # except ValueError:
+    #  # Exception expected.
+    #  pass
+
+    test "special characters" do
+      diffs = [
+        {:equal, "\u0680 \x00 \t %"},
+        {:delete, "\u0681 \x01 \n ^"},
+        {:insert, "\u0682 \x02 \\ |"}
+      ]
+
+      text1 = Diff.text1(diffs)
+      assert "\u0680 \x00 \t %\u0681 \x01 \n ^" == text1
+
+      delta = Diff.to_delta(diffs)
+      assert "=7\t-7\t+%DA%82 %02 %5C %7C" == delta
+
+      # Convert delta string into a diff.
+      assert diffs == Diff.from_delta(text1, delta)
+    end
+
+    test "verify pool of unchanged characters" do
+      diffs = [{:insert, "A-Z a-z 0-9 - _ . ! ~ * ' ( ) ; / ? : @ & = + $ , # "}]
+      text2 = Diff.text2(diffs)
+      assert "A-Z a-z 0-9 - _ . ! ~ * \' ( ) ; / ? : @ & = + $ , # " == text2
+
+      delta = Diff.to_delta(diffs)
+      assert "+A-Z a-z 0-9 - _ . ! ~ * \' ( ) ; / ? : @ & = + $ , # " == delta
+
+      # Convert delta string into a diff.
+      assert diffs == Diff.from_delta("", delta)
+    end
+
+    test "160 kb string" do
+      a = Enum.reduce(1..14, "abcdefghij", fn _, str -> str <> str end)
+
+      diffs = [{:insert, a}]
+      delta = Diff.to_delta(diffs)
+      assert '+' + a == delta
+
+      # Convert delta string into a diff.
+      assert diffs == Diff.from_delta("", delta)
+    end
+  end
+
+  describe "x_index" do
+    test "translation on insertion" do
+      assert 5 == Diff.x_index([{:delete, "a"}, {:insert, "1234"}, {:equal, "xyz"}], 2)
+    end
+
+    test "translation on deletion" do
+      assert 1 == Diff.x_index([{:equal, "a"}, {:delete, "1234"}, {:equal, "xyz"}], 3)
+    end
+  end
+
+  describe "levenshtein" do
+    test "levenshtein with trailing equality" do
+      assert 4 == Diff.levenshtein([{:delete, "abc"}, {:insert, "1234"}, {:equal, "xyz"}])
+    end
+
+    test "levenshtein with leading equality" do
+      assert 4 == Diff.levenshtein([{:equal, "xyz"}, {:delete, "abc"}, {:insert, "1234"}])
+    end
+
+    test "levenshtein with middle equality" do
+      assert 7 == Diff.levenshtein([{:delete, "abc"}, {:equal, "xyz"}, {:insert, "1234"}])
+    end
   end
 
   describe "bisect" do
