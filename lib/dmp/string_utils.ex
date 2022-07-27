@@ -140,11 +140,11 @@ defmodule Dmp.StringUtils do
   end
 
   @doc """
-  A URI encoding, but with plus signs decoded, for use with diffs.
+  A URI encoding, but with spaces left as is, for use with diffs.
   """
   @spec uri_encode(String.t()) :: String.t()
   def uri_encode(str) do
-    URI.encode(str) |> String.replace("+", " ")
+    URI.encode(str) |> String.replace("%20", " ")
   end
 
   @encoding_map [
@@ -167,12 +167,12 @@ defmodule Dmp.StringUtils do
   ]
 
   @doc """
-  Unescape selected chars for compatability with JavaScript's encodeURI.
+  Unescape selected chars for compatability with JavaScript's `encodeURI`.
   In speed critical applications this could be dropped since the
   receiving application will certainly decode these fine.
   Note that this function is case-sensitive.  Thus "%3f" would not be
   unescaped.  But this is ok because it is only called with the output of
-  `URI.encode` which returns uppercase hex.
+  `uri_encode` which returns uppercase hex.
 
   Example: "%3F" -> "?", "%24" -> "$", etc.
 

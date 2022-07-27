@@ -1,6 +1,8 @@
 defmodule DiffTest do
   use ExUnit.Case
 
+  import Dmp.StringUtils
+
   alias Dmp.{Diff, Options}
 
   # doctest Dmp.Diff
@@ -490,7 +492,7 @@ defmodule DiffTest do
   end
 
   describe "delta" do
-    test "1" do
+    test "normal case" do
       diffs = [
         {:equal, "jump"},
         {:delete, "s"},
@@ -512,20 +514,22 @@ defmodule DiffTest do
       assert diffs == Diff.from_delta(text1, delta)
 
       # Generates error (19 != 20).
-      assert_raise RuntimeError, "", fn -> Diff.from_delta(text1 + "x", delta) end
+      assert_raise RuntimeError, "Delta length (19) smaller than source text length (20)", fn ->
+        Diff.from_delta(text1 <> "x", delta)
+      end
 
       # Generates error (19 != 18).
-      assert_raise RuntimeError, "", fn -> Diff.from_delta(String.slice(text1, 1, -1), delta) end
+      text1 = substring(text1, 1)
+
+      assert_raise RuntimeError, "Delta length (19) larger than source text length (18)", fn ->
+        Diff.from_delta(text1, delta)
+      end
     end
 
-    # Generates error (%c3%xy invalid Unicode).
-    # Note: Python 3 can decode this.
-    # try:
-    #  Diff.from_delta("", "+%c3xy")
-    #  self.assertFalse(True)
-    # except ValueError:
-    #  # Exception expected.
-    #  pass
+    # String "+%c3xy" passes in Elixir
+    # test "invalid Unicode" do
+    #  assert_raise RuntimeError, "", fn -> Diff.from_delta("", "+%c3xy") end
+    # end
 
     test "special characters" do
       diffs = [
@@ -561,7 +565,7 @@ defmodule DiffTest do
 
       diffs = [{:insert, a}]
       delta = Diff.to_delta(diffs)
-      assert '+' + a == delta
+      assert "+" <> a == delta
 
       # Convert delta string into a diff.
       assert diffs == Diff.from_delta("", delta)

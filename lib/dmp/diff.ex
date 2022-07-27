@@ -55,8 +55,7 @@ defmodule Dmp.Diff do
   `check_lines` - Speedup flag.  If `false`, then don't run a
     line-level diff first to identify the changed areas.
     If `true`, then run a faster slightly less optimal diff.
-  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use the
-    defaults.
+  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
 
   Returns a difflist.
   """
@@ -1961,7 +1960,7 @@ defmodule Dmp.Diff do
             {levenshtein, insertions + text_length, deletions}
 
           :delete ->
-            {levenshtein, text_length, deletions + text_length}
+            {levenshtein, insertions, deletions + text_length}
 
           :equal ->
             # A deletion and an insertion is one substitution.
@@ -2046,7 +2045,7 @@ defmodule Dmp.Diff do
                         raise "Negative number in from_delta: #{param}"
 
                       pointer + n > text1_length ->
-                        raise "Delta length (#{pointer}) larger than source text length (#{text1_length})"
+                        raise "Delta length (#{pointer + n}) larger than source text length (#{text1_length})"
 
                       true ->
                         n

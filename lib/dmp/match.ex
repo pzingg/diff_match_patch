@@ -17,7 +17,7 @@ defmodule Dmp.Match do
   `text` - The text to search.
   `pattern` - The pattern to search for.
   `loc` - The location to search around.
-  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use the defaults.
+  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
 
   Returns -1 if no match found.
   """
