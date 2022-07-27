@@ -68,7 +68,7 @@ defmodule Dmp.Diff do
       if opts.diff_timeout <= 0 do
         :never
       else
-        deadline = :os.system_time(:millisecond) + round(opts.diff_timeout * 1000)
+        :os.system_time(:millisecond) + round(opts.diff_timeout * 1000)
       end
 
     main_impl(text1, text2, check_lines, deadline)

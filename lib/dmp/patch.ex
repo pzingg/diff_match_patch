@@ -5,7 +5,7 @@ defmodule Dmp.Patch do
 
   import Dmp.StringUtils
 
-  alias Dmp.{Cursor, Diff, Options}
+  alias Dmp.{Cursor, Diff, Match, Options}
 
   alias __MODULE__
 
@@ -401,11 +401,139 @@ defmodule Dmp.Patch do
     patch_margin = Map.fetch!(opts, :match_max_bits)
 
     {patches, null_padding} = add_padding(patches, patch_margin)
-    _text = null_padding <> text <> null_padding
-    _patches = split_max(patches, match_max_bits, patch_margin)
+    text = null_padding <> text <> null_padding
+    patches = split_max(patches, match_max_bits, patch_margin)
 
-    # TODO
-    {text, []}
+    {results, text, _delta, _opts} =
+      Enum.reduce(
+        patches,
+        {[], text, 0, text, opts},
+        fn patch, acc -> patch_loop(patch, acc) end
+      )
+
+    {text, Enum.reverse(results)}
+  end
+
+  @type patch_loop_acc() ::
+          {list(boolean()), String.t(), integer(), options()}
+
+  defp patch_loop(
+         %Patch{diffs: diffs, start2: start2, length1: length1, length2: length2},
+         {results, text, delta, opts}
+       ) do
+    expected_loc = start2 + delta
+    text1 = Diff.text1(diffs)
+    text1_length = String.length(text1)
+    match_max_bits = Map.fetch!(opts, :match_max_bits)
+    patch_margin = Map.fetch!(opts, :match_max_bits)
+    patch_delete_threshold = Map.fetch!(opts, :patch_delete_threshold)
+
+    {start_loc, end_loc} =
+      if text1_length > match_max_bits do
+        # split_max will only provide an oversized pattern in the case of
+        # a monster delete.
+        start_loc = Match.main(text, substring(text1, 0, match_max_bits), expected_loc, opts)
+
+        if start_loc != -1 do
+          end_loc =
+            Match.main(
+              text,
+              substring(text1, text1_length - match_max_bits),
+              expected_loc + text1_length - match_max_bits,
+              opts
+            )
+
+          if end_loc == -1 || start_loc >= end_loc do
+            # Can't find valid trailing context.  Drop this patch.
+            {-1, end_loc}
+          else
+            {start_loc, end_loc}
+          end
+        else
+          {start_loc, -1}
+        end
+      else
+        {Match.main(text, text1, expected_loc, opts), -1}
+      end
+
+    if start_loc == -1 do
+      # No match found.  :(
+      # Subtract the delta for this failed patch from subsequent patches.
+      delta = delta - (length2 - length1)
+      {[false | results], text, delta, match_max_bits, patch_margin, patch_delete_threshold}
+    else
+      # Found a match.  :)
+      delta = start_loc - expected_loc
+
+      text2 =
+        if end_loc == -1 do
+          substring(text, start_loc, min(start_loc + text1_length, String.length(text)))
+        else
+          substring(text, start_loc, min(end_loc + match_max_bits, String.length(text)))
+        end
+
+      {found, text} =
+        if text1 == text2 do
+          # Perfect match, just shove the replacement text in.
+          text =
+            substring(text, 0, start_loc) <>
+              Diff.text2(diffs) <>
+              substring(text, start_loc + text1_length)
+
+          {true, text}
+        else
+          # Imperfect match.  Run a diff to get a framework of equivalent
+          # indices.
+          diffs = Diff.main(text1, text2, false, opts)
+          lev = Diff.levenshtein(diffs)
+
+          if text1_length > match_max_bits &&
+               lev / text1_length > patch_delete_threshold do
+            # The end points match, but the content is unacceptably bad.
+            {false, text}
+          else
+            diffs = Diff.cleanup_semantic_lossless(diffs)
+
+            {text, _index1} =
+              Enum.reduce(diffs, {text, 0}, fn {op, dtext}, {text, index1} ->
+                dtext_length = String.length(dtext)
+
+                case op do
+                  :equal ->
+                    index1 = index1 + dtext_length
+                    {text, index1}
+
+                  :insert ->
+                    # Insertion
+                    index2 = Diff.x_index(diffs, index1)
+
+                    text =
+                      substring(text, 0, start_loc + index2) <>
+                        dtext <>
+                        substring(text, start_loc + index2)
+
+                    index1 = index1 + dtext_length
+                    {text, index1}
+
+                  :delete ->
+                    # Deletion
+                    index2 = Diff.x_index(diffs, index1)
+                    index3 = Diff.x_index(diffs, index1 + dtext_length)
+
+                    text =
+                      substring(text, 0, start_loc + index2) <>
+                        substring(text, start_loc + index3)
+
+                    {text, index1}
+                end
+              end)
+
+            {true, text}
+          end
+        end
+
+      {[found | results], text, delta, match_max_bits, patch_margin, patch_delete_threshold}
+    end
   end
 
   @doc """
