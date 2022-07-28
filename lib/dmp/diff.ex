@@ -61,7 +61,7 @@ defmodule Dmp.Diff do
   """
   @spec main(String.t(), String.t(), boolean(), nil | options()) :: difflist()
   def main(text1, text2, check_lines \\ true, opts \\ nil) do
-    opts = opts || Options.default()
+    opts = Options.valid_options(opts)
 
     deadline =
       if opts.diff_timeout <= 0 do

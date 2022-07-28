@@ -11,10 +11,12 @@ defmodule Dmp.Options do
     1.0 to the score (0.0 is a perfect match).
   `:patch_delete_threshold` - When deleting a large block of text (over ~64 characters), how close do
     the contents have to be to match the expected contents. (0.0 = perfection,
-    1.0 = very loose).  Note that Match_Threshold controls how closely the
+    1.0 = very loose).  Note that `:match_threshold` controls how closely the
     end points of a delete need to match.
   `:patch_margin` - Chunk size for context length.
   """
+
+  alias __MODULE__
 
   defstruct diff_timeout: 1.0,
             diff_edit_cost: 4,
@@ -24,7 +26,7 @@ defmodule Dmp.Options do
             patch_delete_threshold: 0.5,
             patch_margin: 4
 
-  @type t() :: %__MODULE__{
+  @type t() :: %Options{
           diff_timeout: float(),
           diff_edit_cost: non_neg_integer(),
           match_max_bits: non_neg_integer(),
@@ -46,4 +48,33 @@ defmodule Dmp.Options do
   `patch_margin` 4
   """
   def default(), do: %__MODULE__{}
+
+  def valid_options(nil), do: default()
+
+  def valid_options(
+        %Options{
+          diff_timeout: diff_timeout,
+          diff_edit_cost: diff_edit_cost,
+          match_max_bits: match_max_bits,
+          match_threshold: match_threshold,
+          match_distance: match_distance,
+          patch_delete_threshold: patch_delete_threshold,
+          patch_margin: patch_margin
+        } = opts
+      ) do
+    valid =
+      match_max_bits > 0 && match_max_bits <= 64 &&
+        patch_margin > 0 && patch_margin < match_max_bits &&
+        match_threshold >= 0 && match_threshold <= 1.0 &&
+        patch_delete_threshold >= 0 && patch_delete_threshold <= 1.0 &&
+        match_distance >= 0 &&
+        diff_edit_cost >= 0 &&
+        diff_timeout >= 0
+
+    if valid do
+      opts
+    else
+      raise "Invalid Option values"
+    end
+  end
 end

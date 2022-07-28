@@ -6,10 +6,8 @@ defmodule PatchTest do
   # doctest Dmp.Patch
 
   defp patch_fixture_1() do
-    text1 = "The quick brown fox jumps over the lazy dog."
-    text2 = "That quick brown fox jumped over a lazy dog."
-
-    {text1, text2}
+    {"The quick brown fox jumps over the lazy dog.",
+     "That quick brown fox jumped over a lazy dog."}
   end
 
   defp patch_fixture_2() do
@@ -294,21 +292,19 @@ defmodule PatchTest do
       assert "@@ -1,8 +1,12 @@\n %01%02%03%04\n+test\n %01%02%03%04\n" == Patch.to_text(patches)
     end
 
-    @tag :skip
     test "both edges partial" do
       patches = Patch.make("XY", "XtestY")
       assert "@@ -1,2 +1,6 @@\n X\n+test\n Y\n" == Patch.to_text(patches)
       {patches, padding} = Patch.add_padding(patches, 4)
-      assert "\x01\x02\x03" == padding
+      assert "\x01\x02\x03\x04" == padding
       assert "@@ -2,8 +2,12 @@\n %02%03%04X\n+test\n Y%01%02%03\n" == Patch.to_text(patches)
     end
 
-    @tag :skip
     test "both edges none" do
       patches = Patch.make("XXXXYYYY", "XXXXtestYYYY")
       assert "@@ -1,8 +1,12 @@\n XXXX\n+test\n YYYY\n" == Patch.to_text(patches)
       {patches, padding} = Patch.add_padding(patches, 4)
-      assert "" == padding
+      assert "\x01\x02\x03\x04" == padding
       assert "@@ -5,8 +5,12 @@\n XXXX\n+test\n YYYY\n" == Patch.to_text(patches)
     end
   end
@@ -320,7 +316,6 @@ defmodule PatchTest do
       assert {"Hello world.", []} == results
     end
 
-    @tag :skip
     test "exact match" do
       patches = patch_fixture_3()
       results = Patch.apply(patches, "The quick brown fox jumps over the lazy dog.")
@@ -334,7 +329,6 @@ defmodule PatchTest do
       assert {"That quick red rabbit jumped over a tired tiger.", [true, true]} == results
     end
 
-    @tag :skip
     test "failed match" do
       patches = patch_fixture_3()
       results = Patch.apply(patches, "I am the very model of a modern major general.")

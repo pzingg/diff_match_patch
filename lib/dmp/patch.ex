@@ -216,7 +216,7 @@ defmodule Dmp.Patch do
   def make(text1, arg2, opts \\ nil)
 
   def make(text1, text2, opts) when is_binary(text2) do
-    opts = opts || Options.default()
+    opts = Options.valid_options(opts)
     diff_edit_cost = Map.fetch!(opts, :diff_edit_cost)
 
     # No diffs provided, compute our own.
@@ -238,7 +238,7 @@ defmodule Dmp.Patch do
   def make(_text1, [], _opts), do: []
 
   def make(text1, diffs, opts) when is_list(diffs) do
-    opts = opts || Options.default()
+    opts = Options.valid_options(opts)
     patch_margin = Map.fetch!(opts, :patch_margin)
     match_max_bits = Map.fetch!(opts, :match_max_bits)
 
@@ -379,9 +379,10 @@ defmodule Dmp.Patch do
   def apply([], text), do: {text, []}
 
   def apply(patches, text, opts \\ nil) do
-    opts = opts || Options.default()
+    opts = Options.valid_options(opts)
+
     match_max_bits = Map.fetch!(opts, :match_max_bits)
-    patch_margin = Map.fetch!(opts, :match_max_bits)
+    patch_margin = Map.fetch!(opts, :patch_margin)
 
     {patches, null_padding} = add_padding(patches, patch_margin)
     text = null_padding <> text <> null_padding
@@ -394,6 +395,9 @@ defmodule Dmp.Patch do
         fn patch, acc -> apply_loop(patch, acc) end
       )
 
+    # Strip the padding off.
+    null_padding_length = String.length(null_padding)
+    text = substring(text, null_padding_length, String.length(text) - null_padding_length)
     {text, Enum.reverse(results)}
   end
 
@@ -528,6 +532,8 @@ defmodule Dmp.Patch do
   Returns a tuple of the padded patchlist and the padding string added to each side.
   """
   @spec add_padding(patchlist(), non_neg_integer()) :: {patchlist(), String.t()}
+  def add_padding([], _patch_margin), do: {[], ""}
+
   def add_padding(patches, patch_margin) do
     padding_length = patch_margin
     null_padding = Enum.reduce(1..padding_length, "", fn x, s -> s <> to_string([x]) end)
@@ -542,15 +548,17 @@ defmodule Dmp.Patch do
         }
       end)
 
-    {first_patch, mid_patches} = List.pop_at(patches, 0)
-    {last_patch, mid_patches} = List.pop_at(mid_patches, -1)
-    IO.inspect({first_patch, mid_patches, last_patch}, label: "split")
+    {first_patch, mid_patches, last_patch} =
+      case patches do
+        [one_patch] ->
+          {one_patch, [], nil}
 
-    {first_is_last, last_patch} =
-      if is_nil(last_patch) do
-        {true, first_patch}
-      else
-        {false, last_patch}
+        [first_patch, last_patch] ->
+          {first_patch, [], last_patch}
+
+        [first_patch | mid_patches] ->
+          {last_patch, mid_patches} = List.pop_at(mid_patches, -1)
+          {first_patch, mid_patches, last_patch}
       end
 
     # Add some padding on start of first diff.
@@ -592,6 +600,13 @@ defmodule Dmp.Patch do
       end
 
     # Add some padding on end of last diff.
+    {last_patch, last_is_first} =
+      if is_nil(last_patch) do
+        {first_patch, true}
+      else
+        {last_patch, false}
+      end
+
     last_diff = List.last(last_patch.diffs)
 
     last_patch =
@@ -623,8 +638,8 @@ defmodule Dmp.Patch do
         end
       end
 
-    if first_is_last do
-      {[first_patch | mid_patches], null_padding}
+    if last_is_first do
+      {[last_patch], null_padding}
     else
       {[first_patch | mid_patches] ++ [last_patch], null_padding}
     end

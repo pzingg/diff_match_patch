@@ -23,7 +23,7 @@ defmodule Dmp.Match do
   """
   @spec main(String.t(), String.t(), non_neg_integer(), nil | options()) :: integer()
   def main(text, pattern, loc, opts \\ nil) do
-    opts = opts || Options.default()
+    opts = Options.valid_options(opts)
     match_threshold = Map.fetch!(opts, :match_threshold)
     match_distance = Map.fetch!(opts, :match_distance)
 
