@@ -139,15 +139,36 @@ defmodule Dmp.StringUtils do
     end
   end
 
+  @uri_unencoded [
+    {"+", " "},
+    {"%2A", "*"}
+  ]
+
   @doc """
   A URI encoding, but with spaces left as is, for use with diffs.
+
+  Examples:
+
+    iex> StringUtils.uri_encode("(")
+    "%28"
+
+    iex> StringUtils.uri_encode(" ")
+    " "
+
+    iex> StringUtils.uri_encode("*")
+    "*"
+
+    iex> StringUtils.uri_encode("[]")
+    "%5B%5D"
+
   """
   @spec uri_encode(String.t()) :: String.t()
   def uri_encode(str) do
-    URI.encode(str) |> String.replace("%20", " ")
+    str = URI.encode_www_form(str)
+    Enum.reduce(@uri_unencoded, str, fn {from, to}, acc -> String.replace(acc, from, to) end)
   end
 
-  @encoding_map [
+  @uri_decoded [
     {"%21", "!"},
     {"%7E", "~"},
     {"%27", "'"},
@@ -182,6 +203,6 @@ defmodule Dmp.StringUtils do
   """
   @spec unescape_for_encode_uri_compatability(String.t()) :: String.t()
   def unescape_for_encode_uri_compatability(str) do
-    Enum.reduce(@encoding_map, str, fn {from, to}, acc -> String.replace(acc, from, to) end)
+    Enum.reduce(@uri_decoded, str, fn {from, to}, acc -> String.replace(acc, from, to) end)
   end
 end

@@ -1906,6 +1906,34 @@ defmodule Dmp.Diff do
     end
   end
 
+  @html_entities [
+    {"&", "&amp;"},
+    {"<", "&lt;"},
+    {">", "&gt;"},
+    {"\n", "&para;<br>"}
+  ]
+
+  @doc """
+  Convert a Diff list into a pretty HTML report.
+
+  `diffs` - a difflist().
+
+  Returns HTML representation.
+  """
+  @spec to_html(difflist()) :: String.t()
+  def to_html(diffs) do
+    Enum.reduce(diffs, "", fn {op, text}, acc ->
+      text =
+        Enum.reduce(@html_entities, text, fn {from, to}, acc -> String.replace(acc, from, to) end)
+
+      case op do
+        :insert -> acc <> "<ins style=\"background:#e6ffe6;\">" <> text <> "</ins>"
+        :delete -> acc <> "<del style=\"background:#ffe6e6;\">" <> text <> "</del>"
+        :equal -> acc <> "<span>" <> text <> "</span>"
+      end
+    end)
+  end
+
   @doc """
   Compute and return the source text (all equalities and deletions).
 

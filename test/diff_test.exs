@@ -1,6 +1,8 @@
 defmodule DiffTest do
   use ExUnit.Case
 
+  @moduletag :good
+
   import Dmp.StringUtils
 
   alias Dmp.{Diff, Options}
@@ -474,6 +476,13 @@ defmodule DiffTest do
 
       assert [{:delete, "abwxyzcd"}, {:insert, "12wxyz34"}] == Diff.cleanup_efficiency(diffs, 5)
     end
+  end
+
+  test "pretty print" do
+    diffs = [{:equal, "a\n"}, {:delete, "<B>b</B>"}, {:insert, "c&d"}]
+
+    assert "<span>a&para;<br></span><del style=\"background:#ffe6e6;\">&lt;B&gt;b&lt;/B&gt;</del><ins style=\"background:#e6ffe6;\">c&amp;d</ins>" ==
+             Diff.to_html(diffs)
   end
 
   test "compute the source and destination texts" do
