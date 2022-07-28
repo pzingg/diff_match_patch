@@ -624,7 +624,7 @@ defmodule Dmp.Patch do
       end
 
     if first_is_last do
-      {first_patch, null_padding}
+      {[first_patch | mid_patches], null_padding}
     else
       {[first_patch | mid_patches] ++ [last_patch], null_padding}
     end
