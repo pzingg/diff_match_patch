@@ -100,7 +100,7 @@ defmodule Dmp.Patch do
 
   Returns the updated `Patch`.
   """
-  @spec add_context(t(), String.t(), non_neg_integer(), non_neg_integer()) :: String.t()
+  @spec add_context(t(), String.t(), non_neg_integer(), non_neg_integer()) :: t()
   def add_context(patch, text, patch_margin, match_max_bits \\ 32)
   def add_context(patch, "", _patch_margin, _match_max_bits), do: patch
 
@@ -183,6 +183,7 @@ defmodule Dmp.Patch do
 
   Returns a patchlist.
   """
+  @spec from_diffs(Diff.difflist(), nil | options()) :: patchlist()
   def from_diffs(diffs, opts \\ nil) do
     # No origin string provided, compute our own.
     text1 = Diff.text1(diffs)
@@ -202,6 +203,8 @@ defmodule Dmp.Patch do
 
   Returns a patchlist.
   """
+  @spec from_texts_and_diffs(String.t(), String.t(), Diff.difflist(), nil | options()) ::
+          patchlist()
   def from_texts_and_diffs(text1, _text2, diffs, opts \\ nil) do
     make(text1, diffs, opts)
   end
@@ -245,6 +248,7 @@ defmodule Dmp.Patch do
   end
 
   # Get rid of the null case.
+  @spec make_impl(String.t(), Diff.difflist(), options()) :: patchlist()
   defp make_impl(_text1, [], _opts), do: []
 
   defp make_impl(text1, diffs, opts) do

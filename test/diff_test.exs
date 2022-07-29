@@ -5,8 +5,7 @@ defmodule DiffTest do
 
   alias Dmp.{Diff, Options}
 
-  doctest Dmp.Options
-  # doctest Dmp.Diff
+  doctest Dmp.Diff
 
   defp one_second() do
     :os.system_time(:millisecond) + 1_000
@@ -148,7 +147,7 @@ defmodule DiffTest do
     test "8-bit code points" do
       # More than 256 to reveal any 8-bit limitations.
       n = 300
-      chars = Enum.map(1..n, fn i -> to_string([i]) end) |> Enum.join("")
+      chars = Enum.map_join(1..n, fn i -> to_string([i]) end)
       line_list = Enum.map(1..n, fn i -> "#{i}\n" end)
       lines = Enum.join(line_list, "")
       line_list = ["" | line_list]
@@ -168,7 +167,7 @@ defmodule DiffTest do
     test "8-bit code points" do
       # More than 256 to reveal any 8-bit limitations.
       n = 300
-      chars = Enum.map(1..n, fn i -> to_string([i]) end) |> Enum.join("")
+      chars = Enum.map_join(1..n, fn i -> to_string([i]) end)
       line_list = Enum.map(1..n, fn i -> "#{i}\n" end)
       lines = Enum.join(line_list, "")
       line_list = ["" | line_list]
@@ -178,7 +177,7 @@ defmodule DiffTest do
 
     test "invalid code points" do
       # More than 55_295 to verify any 17 * 16-bit limitation.
-      chars = Enum.map(55_290..55_299, fn i -> "#{i}\n" end) |> Enum.join("")
+      chars = Enum.map_join(55_290..55_299, fn i -> "#{i}\n" end)
       {chars1, _chars2, line_list} = Diff.lines_to_chars(chars, "")
       [{_op, text}] = [{:insert, chars1}] |> Diff.chars_to_lines(line_list)
       assert chars == text

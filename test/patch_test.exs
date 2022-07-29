@@ -3,7 +3,7 @@ defmodule PatchTest do
 
   alias Dmp.{Diff, Options, Patch}
 
-  # doctest Dmp.Patch
+  doctest Dmp.Patch
 
   defp patch_fixture_1() do
     {"The quick brown fox jumps over the lazy dog.",

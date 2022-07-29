@@ -232,7 +232,7 @@ defmodule Dmp.Diff do
   @type line_mode_acc :: {integer(), integer(), String.t(), String.t()}
 
   # Verified tail-recursive
-  @spec line_mode_loop(difflist(), line_mode_acc(), expiry()) :: difflist()
+  @spec line_mode_loop(Cursor.t(), line_mode_acc(), expiry()) :: difflist()
   defp line_mode_loop(
          %Cursor{current: nil} = diffs,
          _acc,
@@ -1887,10 +1887,10 @@ defmodule Dmp.Diff do
 
   ## Examples
 
-    iex> Diff.main("The cat", "The big cat") |> x_index(1)
+    iex> Diff.main("The cat", "The big cat") |> Diff.x_index(1)
     1
 
-    iex> Diff.main("The cat", "The big cat") |> x_index(5)
+    iex> Diff.main("The cat", "The big cat") |> Diff.x_index(4)
     8
 
   """
