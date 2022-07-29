@@ -1,6 +1,7 @@
 defmodule Dmp.Match do
   @moduledoc """
-  MATCH FUNCTIONS
+  Given a search string, find its best fuzzy match in a block of plain text.
+  Weighted for both accuracy and location.
   """
 
   use Bitwise, only_operators: true
@@ -23,9 +24,7 @@ defmodule Dmp.Match do
   """
   @spec main(String.t(), String.t(), non_neg_integer(), nil | options()) :: integer()
   def main(text, pattern, loc, opts \\ nil) do
-    opts = Options.valid_options(opts)
-    match_threshold = Map.fetch!(opts, :match_threshold)
-    match_distance = Map.fetch!(opts, :match_distance)
+    opts = Options.valid_options!(opts)
 
     text_length = String.length(text)
     pattern_length = String.length(pattern)
@@ -47,7 +46,7 @@ defmodule Dmp.Match do
 
       true ->
         # Do a fuzzy compare.
-        bitap(text, pattern, loc, match_threshold, match_distance)
+        bitap(text, pattern, loc, opts.match_threshold, opts.match_distance)
     end
   end
 

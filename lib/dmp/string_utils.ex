@@ -1,6 +1,6 @@
 defmodule Dmp.StringUtils do
   @moduledoc """
-  Java.String compatible functions.
+  Java.String- and Javascript-compatible functions missing in Elixir's `String` module.
   """
 
   alias __MODULE__
@@ -9,7 +9,10 @@ defmodule Dmp.StringUtils do
   Returns the index within this string of the first occurrence of the specified substring,
   or -1 if there is no such occurence.
 
-  Examples:
+  ## Examples
+
+      ies> StringUtils.index_of("", "")
+      0
 
       iex> StringUtils.index_of("abracadabra", "b")
       1
@@ -25,7 +28,13 @@ defmodule Dmp.StringUtils do
   Returns the index within this string of the first occurrence of the specified substring,
   starting the search at the specified index, or -1 if there is no such occurence.
 
-  Examples:
+  ## Examples
+
+      iex> StringUtils.index_of("abracadabra", "", 2)
+      2
+
+      iex> StringUtils.index_of("abracadabra", "", 100)
+      11
 
       iex> StringUtils.index_of("abracadabra", "b", 2)
       8
@@ -35,8 +44,8 @@ defmodule Dmp.StringUtils do
 
   """
   @spec index_of(String.t(), String.t(), non_neg_integer()) :: integer()
+  def index_of(s, "", from_index), do: min(from_index, String.length(s))
   def index_of("", _, _), do: -1
-  def index_of(_, "", _), do: -1
 
   def index_of(s, str, from_index) when is_integer(from_index) and from_index >= 0 do
     case String.split(substring(s, from_index), str, parts: 2) do
@@ -49,13 +58,20 @@ defmodule Dmp.StringUtils do
   Returns the index within this string of the last occurrence of the specified substring,
   or -1 if there is no such occurence.
 
-  Examples:
+  ## Examples
+
+      ies> StringUtils.last_index_of("", "")
+      0
+
+      ies> StringUtils.last_index_of("abracadabra", "")
+      11
 
       iex> StringUtils.last_index_of("abracadabra", "b")
       8
 
       iex> StringUtils.last_index_of("abracadabra", "f")
       -1
+
 
   """
   @spec last_index_of(String.t(), String.t()) :: integer()
@@ -65,7 +81,7 @@ defmodule Dmp.StringUtils do
   Returns the index within this string of the last occurrence of the specified substring,
   starting the search at the specified index, or -1 if there is no such occurence.
 
-  Examples:
+  ## Examples
 
       iex> StringUtils.index_of("abracadabra", "b", 5)
       8
@@ -76,10 +92,13 @@ defmodule Dmp.StringUtils do
       iex> StringUtils.last_index_of("abcdefghijk", "fgh", 5)
       5
 
+      ies> StringUtils.last_index_of("abcdefghijk", "", 5)
+      11
+
   """
   @spec last_index_of(String.t(), String.t(), non_neg_integer()) :: integer()
+  def last_index_of(s, "", _), do: String.length(s)
   def last_index_of("", _, _), do: -1
-  def last_index_of(_, "", _), do: -1
   def last_index_of(s, str, begin_index) when begin_index < 0, do: last_index_of(s, str, 0)
 
   def last_index_of(s, str, begin_index) do
@@ -103,7 +122,7 @@ defmodule Dmp.StringUtils do
   Returns a new string that is a substring of this string. The substring begins
   with the character at the specified index and extends to the end of this string.
 
-  Examples:
+  ## Examples
 
       iex> StringUtils.substring("abracadabra", 6)
       "dabra"
@@ -121,7 +140,7 @@ defmodule Dmp.StringUtils do
   at the specified `begin_index` and extends to the character at index `end_index - 1`.
   Thus the length of the substring is `end_index - begin_index`.
 
-  Examples:
+  ## Examples
 
       iex> StringUtils.substring("abracadabra", 2, 6)
       "raca"
@@ -139,7 +158,7 @@ defmodule Dmp.StringUtils do
     end
   end
 
-  @uri_unencoded [
+  @not_escaped [
     {"+", " "},
     {"%2A", "*"}
   ]
@@ -147,28 +166,28 @@ defmodule Dmp.StringUtils do
   @doc """
   A URI encoding, but with spaces left as is, for use with diffs.
 
-  Examples:
+  ## Examples
 
-    iex> StringUtils.uri_encode("(")
-    "%28"
+      iex> StringUtils.uri_encode("(")
+      "%28"
 
-    iex> StringUtils.uri_encode(" ")
-    " "
+      iex> StringUtils.uri_encode(" ")
+      " "
 
-    iex> StringUtils.uri_encode("*")
-    "*"
+      iex> StringUtils.uri_encode("*")
+      "*"
 
-    iex> StringUtils.uri_encode("[]")
-    "%5B%5D"
+      iex> StringUtils.uri_encode("[]")
+      "%5B%5D"
 
   """
   @spec uri_encode(String.t()) :: String.t()
   def uri_encode(str) do
     str = URI.encode_www_form(str)
-    Enum.reduce(@uri_unencoded, str, fn {from, to}, acc -> String.replace(acc, from, to) end)
+    Enum.reduce(@not_escaped, str, fn {from, to}, acc -> String.replace(acc, from, to) end)
   end
 
-  @uri_decoded [
+  @unescaped [
     {"%21", "!"},
     {"%7E", "~"},
     {"%27", "'"},
@@ -193,16 +212,22 @@ defmodule Dmp.StringUtils do
   receiving application will certainly decode these fine.
   Note that this function is case-sensitive.  Thus "%3f" would not be
   unescaped.  But this is ok because it is only called with the output of
-  `uri_encode` which returns uppercase hex.
+  `StringUtils.uri_encode` which returns uppercase hex.
 
-  Example: "%3F" -> "?", "%24" -> "$", etc.
+  ## Examples
 
-  `str` The string to escape.
+      iex> StringUtils.unescape_for_encode_uri_compatability("%3F")
+      "?"
 
-  Returns the unescaped string.
+      iex> StringUtils.unescape_for_encode_uri_compatability("%3f")
+      "%3f"
+
+      iex> StringUtils.unescape_for_encode_uri_compatability("%24")
+      "$"
+
   """
   @spec unescape_for_encode_uri_compatability(String.t()) :: String.t()
   def unescape_for_encode_uri_compatability(str) do
-    Enum.reduce(@uri_decoded, str, fn {from, to}, acc -> String.replace(acc, from, to) end)
+    Enum.reduce(@unescaped, str, fn {from, to}, acc -> String.replace(acc, from, to) end)
   end
 end

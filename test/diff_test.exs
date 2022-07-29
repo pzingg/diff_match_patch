@@ -1,12 +1,11 @@
 defmodule DiffTest do
   use ExUnit.Case
 
-  @moduletag :good
-
   import Dmp.StringUtils
 
   alias Dmp.{Diff, Options}
 
+  doctest Dmp.Options
   # doctest Dmp.Diff
 
   defp one_second() do

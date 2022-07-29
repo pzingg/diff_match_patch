@@ -26,6 +26,10 @@ defmodule PatchTest do
     )
   end
 
+  defp repeats() do
+    String.duplicate("abcdef", 100)
+  end
+
   defp with_patch_delete_threshold(t) do
     opts = Options.default()
     %Options{opts | patch_delete_threshold: t}
@@ -153,6 +157,16 @@ defmodule PatchTest do
 
       assert "@@ -1,27 +1,28 @@\n Th\n-e\n+at\n  quick brown fox jumps. \n" == to_string(p)
     end
+
+    test "long string with repeats" do
+      p = Patch.from_text("@@ -600,0 +601,3 @@\n+123\n") |> List.first()
+
+      assert %Patch{diffs: [{:insert, "123"}], start1: 600, start2: 600, length1: 0, length2: 3} ==
+               p
+
+      p = Patch.add_context(p, repeats(), 4)
+      assert "@@ -573,28 +573,31 @@\n cdefabcdefabcdefabcdefabcdef\n+123\n" == to_string(p)
+    end
   end
 
   describe "make" do
@@ -217,9 +231,8 @@ defmodule PatchTest do
       assert diffs == patch_diffs
     end
 
-    @tag :skip
     test "long string with repeats" do
-      text1 = String.duplicate("abcdef", 100)
+      text1 = repeats()
       text2 = text1 <> "123"
       expected_patch = "@@ -573,28 +573,31 @@\n cdefabcdefabcdefabcdefabcdef\n+123\n"
       patches = Patch.make(text1, text2)
@@ -229,6 +242,7 @@ defmodule PatchTest do
 
   describe "split_max" do
     # Assumes that Match_MaxBits is 32.
+
     test "example 1" do
       patches =
         Patch.make(
@@ -268,7 +282,6 @@ defmodule PatchTest do
                Patch.to_text(patches)
     end
 
-    @tag :skip
     test "example 4" do
       patches =
         Patch.make(
@@ -322,7 +335,6 @@ defmodule PatchTest do
       assert {"That quick brown fox jumped over a lazy dog.", [true, true]} == results
     end
 
-    @tag :skip
     test "partial match" do
       patches = patch_fixture_3()
       results = Patch.apply(patches, "The quick red rabbit jumps over the tired tiger.")
@@ -335,7 +347,6 @@ defmodule PatchTest do
       assert {"I am the very model of a modern major general.", [false, false]} == results
     end
 
-    @tag :skip
     test "big delete, small change" do
       patches =
         Patch.make(
@@ -352,7 +363,6 @@ defmodule PatchTest do
       assert {"xabcy", [true, true]} == results
     end
 
-    @tag :skip
     test "big delete, big change 1" do
       patches =
         Patch.make(
@@ -370,7 +380,6 @@ defmodule PatchTest do
               [false, true]} == results
     end
 
-    @tag :skip
     test "big delete, big change 2" do
       opts = with_patch_delete_threshold(0.6)
 
@@ -391,7 +400,6 @@ defmodule PatchTest do
       assert {"xabcy", [true, true]} == results
     end
 
-    @tag :skip
     test "compensate for failed patch" do
       opts = with_zero_match_threshold_and_distance()
 
@@ -409,37 +417,32 @@ defmodule PatchTest do
                results
     end
 
-    @tag :skip
     test "no side effects" do
       patches = Patch.make("", "test")
       patchstr = Patch.to_text(patches)
-      results = Patch.apply(patches, "")
+      _results = Patch.apply(patches, "")
       assert patchstr == Patch.to_text(patches)
     end
 
-    @tag :skip
     test "no side effects with major delete" do
       patches = Patch.make("The quick brown fox jumps over the lazy dog.", "Woof")
       patchstr = Patch.to_text(patches)
-      results = Patch.apply(patches, "The quick brown fox jumps over the lazy dog.")
+      _results = Patch.apply(patches, "The quick brown fox jumps over the lazy dog.")
       assert patchstr == Patch.to_text(patches)
     end
 
-    @tag :skip
     test "edge exact match" do
       patches = Patch.make("", "test")
       results = Patch.apply(patches, "")
       assert {"test", [true]} == results
     end
 
-    @tag :skip
     test "near edge exact match" do
       patches = Patch.make("XY", "XtestY")
       results = Patch.apply(patches, "XY")
       assert {"XtestY", [true]} == results
     end
 
-    @tag :skip
     test "edge partial match" do
       patches = Patch.make("y", "y123")
       results = Patch.apply(patches, "x")

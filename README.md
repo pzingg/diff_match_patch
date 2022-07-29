@@ -1,16 +1,16 @@
-# Cursor
+# diff_match_patch
 
-**TODO: Add description**
+A translation of Google's public-domain [diff_match_patch](https://github.com/google/diff-match-patch) code into pure Elixir.
 
 ## Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `cursor` to your list of dependencies in `mix.exs`:
+by adding `diff_match_patch` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:cursor, "~> 0.1.0"}
+    {:diff_match_patch, "~> 0.1.0"}
   ]
 end
 ```

@@ -1,13 +1,26 @@
 defmodule Dmp.Diff do
   @moduledoc """
-  ## DIFF FUNCTIONS
+  Compare two blocks of plain text and efficiently return a list of differences.
+  """
+
+  import Dmp.StringUtils
+
+  alias Dmp.{Cursor, Options}
+
+  @typedoc """
+  A diff's operation type.
+  """
+  @type op() :: :delete | :insert | :equal
+
+  @typedoc """
+  The diff tuple, consisting of two elements: the operation and the associated text.
+  """
+  @type t() :: {op(), String.t()}
+
+  @typedoc """
+  A list of diff operations, representing the difference between two text versions.
 
   A "difflist" is an Elixir list of "diff" tuples.
-  Each tuple is an operation atom and a data string.
-  The operations are:
-
-  `:delete`, `:insert`, `:equal`
-
   Here is an example difflist:
 
   ```
@@ -16,18 +29,6 @@ defmodule Dmp.Diff do
 
   which means: delete "Hello", add "Goodbye" and keep " world."
   """
-
-  import Dmp.StringUtils
-
-  alias Dmp.{Cursor, Options}
-
-  @typedoc "Operations for a diff."
-  @type op() :: :delete | :insert | :equal
-
-  @typedoc "The diff tuple."
-  @type t() :: {op(), String.t()}
-
-  @typedoc "A list of diff operations."
   @type difflist() :: list(t())
 
   @type options() :: Options.t()
@@ -36,33 +37,42 @@ defmodule Dmp.Diff do
 
   @typedoc """
   The result of a successful `half_match` call.
+
   A tuple of five strings:
 
-    1. prefix of `text1`
-    2. suffix of `text1`
-    3. prefix of `text2`
-    4. suffix of `text2`
-    5. common middle
+    1. the prefix of `text1`
+    2. the suffix of `text1`
+    3. the prefix of `text2`
+    4. the suffix of `text2`
+    5. the common middle
   """
   @type half_match_result() :: {String.t(), String.t(), String.t(), String.t(), String.t()}
 
   @doc """
   Find the differences between two texts.
-  Most of the time `check_lines` is wanted, so default to true.
 
-  `text1` - Old string to be diffed.
-  `text2` - New string to be diffed.
-  `check_lines` - Speedup flag.  If `false`, then don't run a
-    line-level diff first to identify the changed areas.
-    If `true`, then run a faster slightly less optimal diff.
-  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
+  Most of the time `check_lines` is wanted, so it defaults to `true`.
+
+    * `text1` - Old string to be diffed.
+    * `text2` - New string to be diffed.
+    * `check_lines` - Speedup flag.  If `false`, then don't run a
+      line-level diff first to identify the changed areas.
+    * If `true`, then run a faster slightly less optimal diff.
+    * `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
 
   Returns a difflist.
   """
   @spec main(String.t(), String.t(), boolean(), nil | options()) :: difflist()
   def main(text1, text2, check_lines \\ true, opts \\ nil) do
-    opts = Options.valid_options(opts)
+    opts = Options.valid_options!(opts)
+    main_(text1, text2, check_lines, opts)
+  end
 
+  @doc """
+  Skips validation of options. Used internally by `Patch.apply`.
+  """
+  @spec main_(String.t(), String.t(), boolean(), options()) :: difflist()
+  def main_(text1, text2, check_lines, opts) do
     deadline =
       if opts.diff_timeout <= 0 do
         :never
@@ -271,11 +281,11 @@ defmodule Dmp.Diff do
   @doc """
   Find the 'middle snake' of a diff, split the problem in two
   and return the recursively constructed diff.
-  See Myers 1986 paper: An O(ND) Difference Algorithm and Its Variations.
+  See Myers 1986 paper: [An O(ND) Difference Algorithm and Its Variations.](http://www.xmailserver.org/diff2.pdf)
 
-  `text1` - Old string to be diffed.
-  `text2` - New string to be diffed.
-  `deadline` - Unix timestamp (in milliseconds) at which to bail if not yet complete.
+    * `text1` - Old string to be diffed.
+    * `text2` - New string to be diffed.
+    * `deadline` - Unix timestamp (in milliseconds) at which to bail if not yet complete.
 
   Returns a difflist.
   """
