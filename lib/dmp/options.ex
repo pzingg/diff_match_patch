@@ -78,6 +78,7 @@ defmodule Dmp.Options do
   @spec valid_options!(nil | t()) :: t()
   def valid_options!(nil), do: default()
 
+  # credo:disable-for-lines:25 Credo.Check.Refactor.CyclomaticComplexity
   def valid_options!(
         %Options{
           diff_timeout: diff_timeout,

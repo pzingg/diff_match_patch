@@ -135,59 +135,57 @@ defmodule Dmp.Diff do
   Returns a difflist.
   """
   @spec compute(String.t(), String.t(), boolean(), expiry()) :: difflist()
+  def compute("", text2, _, _) do
+    # Just add some text (speedup).
+    [{:insert, text2}]
+  end
+
+  def compute(text1, "", _, _) do
+    # Just delete some text (speedup).
+    [{:delete, text1}]
+  end
+
+  # credo:disable-for-lines:43 Credo.Check.Refactor.CyclomaticComplexity
   def compute(text1, text2, check_lines, deadline) do
     text1_length = String.length(text1)
     text2_length = String.length(text2)
 
-    cond do
-      text1 == "" ->
-        # Just add some text (speedup).
+    {longtext, shorttext, shorttext_length, op} =
+      if text1_length > text2_length do
+        {text1, text2, text2_length, :delete}
+      else
+        {text2, text1, text1_length, :insert}
+      end
 
-        [{:insert, text2}]
+    case String.split(longtext, shorttext, parts: 2) do
+      [left, right] ->
+        # Shorter text is inside the longer text (speedup).
+        [{op, left}, {:equal, shorttext}, {op, right}]
 
-      text2 == "" ->
-        # Just delete some text (speedup).
+      _notfound ->
+        if shorttext_length == 1 do
+          # Single character string.
+          # After the previous speedup, the character can't be an equality.
 
-        [{:delete, text1}]
+          [{:delete, text1}, {:insert, text2}]
+        else
+          # Check to see if the problem can be split in two.
+          case half_match(text1, text2, deadline) do
+            {text1_a, text1_b, text2_a, text2_b, mid_common} ->
+              # Send both pairs off for separate processing.
 
-      true ->
-        {longtext, shorttext, shorttext_length, op} =
-          if text1_length > text2_length do
-            {text1, text2, text2_length, :delete}
-          else
-            {text2, text1, text1_length, :insert}
-          end
+              diffs_a = main_impl(text1_a, text2_a, check_lines, deadline)
+              diffs_b = main_impl(text1_b, text2_b, check_lines, deadline)
+              # Merge the results.
+              diffs_a ++ [{:equal, mid_common} | diffs_b]
 
-        case String.split(longtext, shorttext, parts: 2) do
-          [left, right] ->
-            # Shorter text is inside the longer text (speedup).
-            [{op, left}, {:equal, shorttext}, {op, right}]
-
-          _notfound ->
-            if shorttext_length == 1 do
-              # Single character string.
-              # After the previous speedup, the character can't be an equality.
-
-              [{:delete, text1}, {:insert, text2}]
-            else
-              # Check to see if the problem can be split in two.
-              case half_match(text1, text2, deadline) do
-                {text1_a, text1_b, text2_a, text2_b, mid_common} ->
-                  # Send both pairs off for separate processing.
-
-                  diffs_a = main_impl(text1_a, text2_a, check_lines, deadline)
-                  diffs_b = main_impl(text1_b, text2_b, check_lines, deadline)
-                  # Merge the results.
-                  diffs_a ++ [{:equal, mid_common} | diffs_b]
-
-                nil ->
-                  if check_lines && text1_length > 100 && text2_length > 100 do
-                    line_mode(text1, text2, deadline)
-                  else
-                    bisect(text1, text2, deadline)
-                  end
+            nil ->
+              if check_lines && text1_length > 100 && text2_length > 100 do
+                line_mode(text1, text2, deadline)
+              else
+                bisect(text1, text2, deadline)
               end
-            end
+          end
         end
     end
   end
@@ -229,10 +227,6 @@ defmodule Dmp.Diff do
     end
   end
 
-  @type line_mode_acc :: {integer(), integer(), String.t(), String.t()}
-
-  # Verified tail-recursive
-  @spec line_mode_loop(Cursor.t(), line_mode_acc(), expiry()) :: difflist()
   defp line_mode_loop(
          %Cursor{current: nil} = diffs,
          _acc,
@@ -315,14 +309,14 @@ defmodule Dmp.Diff do
 
     # Offsets for start and end of k loop.
     # Prevents mapping of space beyond the grid.
-    # k1start = 0
-    # k1end = 0
-    # k2start = 0
-    # k2end = 0
+    # k1_start = 0
+    # k1_end = 0
+    # k2_start = 0
+    # k2_end = 0
     diffs =
       Enum.reduce_while(0..max_d, {v1init, v2init, 0, 0, 0, 0}, fn d,
-                                                                   {v1, v2, k1start, k1end,
-                                                                    k2start, k2end} ->
+                                                                   {v1, v2, k1_start, k1_end,
+                                                                    k2_start, k2_end} ->
         if is_integer(deadline) && :os.system_time(:millisecond) > deadline do
           # Bail out if deadline is reached.
 
@@ -330,54 +324,43 @@ defmodule Dmp.Diff do
         else
           # Walk the front path one step.
           {v1, diffs1} =
-            advance_front(
-              d,
+            advance_front(v1, v2, d, -d + k1_start, {
+              k1_start,
+              k1_end,
               v_offset,
               v_length,
-              -d + k1start,
-              k1start,
-              k1end,
-              v1,
-              v2,
               text1,
               text1_length,
               text2,
               text2_length,
               deadline
-            )
+            })
 
-          if !is_nil(diffs1) do
+          if is_list(diffs1) do
             {:halt, diffs1}
           else
             # Walk the reverse path one step.
 
             {v2, diffs2} =
               advance_reverse(
-                d,
-                v_offset,
-                v_length,
-                -d + k2start,
-                k2start,
-                k2end,
                 v1,
                 v2,
-                text1,
-                text1_length,
-                text2,
-                text2_length,
-                deadline
+                d,
+                -d + k2_start,
+                {k2_start, k2_end, v_offset, v_length, text1, text1_length, text2, text2_length,
+                 deadline}
               )
 
-            if !is_nil(diffs2) do
+            if is_list(diffs2) do
               {:halt, diffs2}
             else
-              {:cont, {v1, v2, k1start, k1end, k2start, k2end}}
+              {:cont, {v1, v2, k1_start, k1_end, k2_start, k2_end}}
             end
           end
         end
       end)
 
-    if !is_nil(diffs) do
+    if is_list(diffs) do
       diffs
     else
       # Diff took too long and hit the deadline or
@@ -387,224 +370,238 @@ defmodule Dmp.Diff do
   end
 
   defp advance_front(
+         v1,
+         _v2,
          d,
-         v_offset,
-         v_length,
          k1,
-         k1start,
-         k1end,
+         {_k1_start, k1_end, _v_offset, _v_length, _text1, _text1_length, _text2, _text2_length,
+          _deadline}
+       )
+       when k1 > d - k1_end do
+    {v1, nil}
+  end
+
+  defp advance_front(
          v1,
          v2,
-         text1,
-         text1_length,
-         text2,
-         text2_length,
-         deadline
+         d,
+         k1,
+         {k1_start, k1_end, v_offset, v_length, text1, text1_length, text2, text2_length,
+          deadline}
        ) do
-    if k1 <= d - k1end do
-      k1_offset = v_offset + k1
-      v1_minus1 = v1[k1_offset - 1]
-      v1_plus1 = v1[k1_offset + 1]
+    {v1, x1, y1} =
+      get_front_location(v1, d, k1, v_offset, text1, text1_length, text2, text2_length)
 
-      x1 =
-        if k1 == -d || (k1 != d && v1_minus1 < v1_plus1) do
-          v1_plus1
-        else
-          v1_minus1 + 1
-        end
+    {k1_start, k1_end, diffs} =
+      bisect_front(
+        v2,
+        k1,
+        x1,
+        y1,
+        {k1_start, k1_end, v_offset, v_length, text1, text1_length, text2, text2_length, deadline}
+      )
 
-      y1 = x1 - k1
-      {x1, y1} = advance1(x1, y1, text1, text1_length, text2, text2_length)
-      v1 = Map.put(v1, k1_offset, x1)
-
-      delta = text1_length - text2_length
-
-      # If the total number of characters is odd, then the front path will
-      # collide with the reverse path.
-      front = rem(delta, 2) != 0
-
-      {k1start, k1end, diffs} =
-        cond do
-          x1 > text1_length ->
-            # Ran off the right of the graph.
-            {k1start, k1end + 2, nil}
-
-          y1 > text2_length ->
-            # Ran off the bottom of the graph.
-            {k1start + 2, k1end, nil}
-
-          front ->
-            k2_offset = v_offset + delta - k1
-
-            if k2_offset >= 0 && k2_offset < v_length && v2[k2_offset] != -1 do
-              # Mirror x2 onto top-left coordinate system.
-              x2 = text1_length - v2[k2_offset]
-
-              if x1 >= x2 do
-                # Overlap detected.
-
-                {k1start, k1end, bisect_split(text1, text2, x1, y1, deadline)}
-              else
-                {k1start, k1end, nil}
-              end
-            else
-              {k1start, k1end, nil}
-            end
-
-          true ->
-            {k1start, k1end, nil}
-        end
-
-      if !is_nil(diffs) do
-        {v1, diffs}
-      else
-        advance_front(
-          d,
-          v_offset,
-          v_length,
-          k1 + 2,
-          k1start,
-          k1end,
-          v1,
-          v2,
-          text1,
-          text1_length,
-          text2,
-          text2_length,
-          deadline
-        )
-      end
+    if is_list(diffs) do
+      {v1, diffs}
     else
-      {v1, nil}
+      advance_front(
+        v1,
+        v2,
+        d,
+        k1 + 2,
+        {k1_start, k1_end, v_offset, v_length, text1, text1_length, text2, text2_length, deadline}
+      )
     end
   end
 
-  @spec advance1(
-          non_neg_integer(),
-          non_neg_integer(),
-          String.t(),
-          non_neg_integer(),
-          String.t(),
-          non_neg_integer()
-        ) :: {non_neg_integer(), non_neg_integer()}
-  defp advance1(x1, y1, text1, text1_length, text2, text2_length) do
+  defp get_front_location(v1, d, k1, v_offset, text1, text1_length, text2, text2_length) do
+    k1_offset = v_offset + k1
+    v1_minus1 = v1[k1_offset - 1]
+    v1_plus1 = v1[k1_offset + 1]
+
+    x1 =
+      if k1 == -d || (k1 != d && v1_minus1 < v1_plus1) do
+        v1_plus1
+      else
+        v1_minus1 + 1
+      end
+
+    {x1, y1} = advance_x1_y1(x1, x1 - k1, text1, text1_length, text2, text2_length)
+    v1 = Map.put(v1, k1_offset, x1)
+    {v1, x1, y1}
+  end
+
+  defp advance_x1_y1(x1, y1, text1, text1_length, text2, text2_length) do
     if x1 < text1_length && y1 < text2_length &&
          String.at(text1, x1) == String.at(text2, y1) do
-      advance1(x1 + 1, y1 + 1, text1, text1_length, text2, text2_length)
+      advance_x1_y1(x1 + 1, y1 + 1, text1, text1_length, text2, text2_length)
     else
       {x1, y1}
     end
   end
 
-  defp advance_reverse(
-         d,
-         v_offset,
-         v_length,
-         k2,
-         k2start,
-         k2end,
-         v1,
+  defp bisect_front(
          v2,
-         text1,
-         text1_length,
-         text2,
-         text2_length,
-         deadline
+         k1,
+         x1,
+         y1,
+         {k1_start, k1_end, v_offset, v_length, text1, text1_length, text2, text2_length,
+          deadline}
        ) do
-    if k2 <= d - k2end do
-      k2_offset = v_offset + k2
-      v2_minus1 = v2[k2_offset - 1]
-      v2_plus1 = v2[k2_offset + 1]
+    delta = text1_length - text2_length
 
-      x2 =
-        if k2 == -d || (k2 != d && v2_minus1 < v2_plus1) do
-          v2_plus1
+    # If the total number of characters is odd, then the front path will
+    # collide with the reverse path.
+    front = rem(delta, 2) != 0
+
+    cond do
+      x1 > text1_length ->
+        # Ran off the right of the graph.
+        {k1_start, k1_end + 2, nil}
+
+      y1 > text2_length ->
+        # Ran off the bottom of the graph.
+        {k1_start + 2, k1_end, nil}
+
+      front ->
+        k2_offset = v_offset + delta - k1
+
+        if k2_offset >= 0 && k2_offset < v_length && v2[k2_offset] != -1 do
+          # Mirror x2 onto top-left coordinate system.
+          x2 = text1_length - v2[k2_offset]
+
+          if x1 >= x2 do
+            # Overlap detected.
+
+            {k1_start, k1_end, bisect_split(text1, text2, x1, y1, deadline)}
+          else
+            {k1_start, k1_end, nil}
+          end
         else
-          v2_minus1 + 1
+          {k1_start, k1_end, nil}
         end
 
-      y2 = x2 - k2
-      {x2, y2} = advance2(x2, y2, text1, text1_length, text2, text2_length)
-      v2 = Map.put(v2, k2_offset, x2)
-
-      delta = text1_length - text2_length
-
-      # If the total number of characters is odd, then the front path will
-      # collide with the reverse path.
-      front = rem(delta, 2) != 0
-
-      {k2start, k2end, diffs} =
-        cond do
-          x2 > text1_length ->
-            # Ran off the right of the graph.
-            {k2start, k2end + 2, nil}
-
-          y2 > text2_length ->
-            # Ran off the bottom of the graph.
-            {k2start + 2, k2end, nil}
-
-          !front ->
-            k1_offset = v_offset + delta - k2
-
-            if k1_offset >= 0 && k1_offset < v_length && v1[k1_offset] != -1 do
-              x1 = v1[k1_offset]
-              y1 = v_offset + x1 - k1_offset
-              # Mirror x2 onto top-left coordinate system.
-              x2 = text1_length - x2
-
-              if x1 >= x2 do
-                # Overlap detected.
-
-                {k2start, k2end, bisect_split(text1, text2, x1, y1, deadline)}
-              else
-                {k2start, k2end, nil}
-              end
-            else
-              {k2start, k2end, nil}
-            end
-
-          true ->
-            {k2start, k2end, nil}
-        end
-
-      if !is_nil(diffs) do
-        {v2, diffs}
-      else
-        advance_reverse(
-          d,
-          v_offset,
-          v_length,
-          k2 + 2,
-          k2start,
-          k2end,
-          v1,
-          v2,
-          text1,
-          text1_length,
-          text2,
-          text2_length,
-          deadline
-        )
-      end
-    else
-      {v2, nil}
+      true ->
+        {k1_start, k1_end, nil}
     end
   end
 
-  @spec advance2(
-          non_neg_integer(),
-          non_neg_integer(),
-          String.t(),
-          non_neg_integer(),
-          String.t(),
-          non_neg_integer()
-        ) :: {non_neg_integer(), non_neg_integer()}
-  defp advance2(x2, y2, text1, text1_length, text2, text2_length) do
+  defp advance_reverse(
+         _v1,
+         v2,
+         d,
+         k2,
+         {_k2_start, k2_end, _v_offset, _v_length, _text1, _text1_length, _text2, _text2_length,
+          _deadline}
+       )
+       when k2 > d - k2_end do
+    {v2, nil}
+  end
+
+  defp advance_reverse(
+         v1,
+         v2,
+         d,
+         k2,
+         {k2_start, k2_end, v_offset, v_length, text1, text1_length, text2, text2_length,
+          deadline}
+       ) do
+    {v2, x2, y2} =
+      get_reverse_location(v2, d, k2, v_offset, text1, text1_length, text2, text2_length)
+
+    {k2_start, k2_end, diffs} =
+      bisect_reverse(
+        v1,
+        k2,
+        x2,
+        y2,
+        {k2_start, k2_end, v_offset, v_length, text1, text1_length, text2, text2_length, deadline}
+      )
+
+    if is_list(diffs) do
+      {v2, diffs}
+    else
+      advance_reverse(
+        v1,
+        v2,
+        d,
+        k2 + 2,
+        {k2_start, k2_end, v_offset, v_length, text1, text1_length, text2, text2_length, deadline}
+      )
+    end
+  end
+
+  defp get_reverse_location(v2, d, k2, v_offset, text1, text1_length, text2, text2_length) do
+    k2_offset = v_offset + k2
+    v2_minus1 = v2[k2_offset - 1]
+    v2_plus1 = v2[k2_offset + 1]
+
+    x2 =
+      if k2 == -d || (k2 != d && v2_minus1 < v2_plus1) do
+        v2_plus1
+      else
+        v2_minus1 + 1
+      end
+
+    {x2, y2} = advance_x2_y2(x2, x2 - k2, text1, text1_length, text2, text2_length)
+    v2 = Map.put(v2, k2_offset, x2)
+    {v2, x2, y2}
+  end
+
+  defp advance_x2_y2(x2, y2, text1, text1_length, text2, text2_length) do
     if x2 < text1_length && y2 < text2_length &&
          String.at(text1, text1_length - x2 - 1) == String.at(text2, text2_length - y2 - 1) do
-      advance2(x2 + 1, y2 + 1, text1, text1_length, text2, text2_length)
+      advance_x2_y2(x2 + 1, y2 + 1, text1, text1_length, text2, text2_length)
     else
       {x2, y2}
+    end
+  end
+
+  defp bisect_reverse(
+         v1,
+         k2,
+         x2,
+         y2,
+         {k2_start, k2_end, v_offset, v_length, text1, text1_length, text2, text2_length,
+          deadline}
+       ) do
+    delta = text1_length - text2_length
+
+    # If the total number of characters is odd, then the front path will
+    # collide with the reverse path.
+    front = rem(delta, 2) != 0
+
+    cond do
+      x2 > text1_length ->
+        # Ran off the right of the graph.
+        {k2_start, k2_end + 2, nil}
+
+      y2 > text2_length ->
+        # Ran off the bottom of the graph.
+        {k2_start + 2, k2_end, nil}
+
+      !front ->
+        k1_offset = v_offset + delta - k2
+
+        if k1_offset >= 0 && k1_offset < v_length && v1[k1_offset] != -1 do
+          x1 = v1[k1_offset]
+          y1 = v_offset + x1 - k1_offset
+          # Mirror x2 onto top-left coordinate system.
+          x2 = text1_length - x2
+
+          if x1 >= x2 do
+            # Overlap detected.
+
+            {k2_start, k2_end, bisect_split(text1, text2, x1, y1, deadline)}
+          else
+            {k2_start, k2_end, nil}
+          end
+        else
+          {k2_start, k2_end, nil}
+        end
+
+      true ->
+        {k2_start, k2_end, nil}
     end
   end
 
@@ -681,18 +678,18 @@ defmodule Dmp.Diff do
     end
   end
 
-  @type munge_line_hash() :: %{String.t() => non_neg_integer()}
-  @type munge_line_acc() ::
-          {munge_line_hash(), list(String.t()), nil | list(non_neg_integer()),
-           nil | non_neg_integer()}
-  @type munge_line_result() :: {munge_line_hash(), list(String.t()), String.t()}
+  @typep munge_line_hash() :: %{String.t() => non_neg_integer()}
+  @typep munge_line_acc() ::
+           {munge_line_hash(), list(String.t()), nil | list(non_neg_integer()),
+            nil | non_neg_integer()}
+  @typep munge_line_result() :: {munge_line_hash(), list(String.t()), String.t()}
 
   @spec lines_to_chars_munge(
           String.t(),
           munge_line_acc(),
           non_neg_integer()
         ) :: munge_line_result()
-  # Verified tail-recursive
+
   # Case 1. Initial text is ""
   defp lines_to_chars_munge("", {h, arr, nil, _}, _max_lines) do
     {h, arr, ""}
@@ -922,8 +919,10 @@ defmodule Dmp.Diff do
       text1_length = String.length(text1)
       text2_length = String.length(text2)
 
+      normal_order = text1_length > text2_length
+
       {longtext, shorttext, longtext_length, shorttext_length} =
-        if text1_length > text2_length do
+        if normal_order do
           {text1, text2, text1_length, text2_length}
         else
           {text2, text1, text2_length, text1_length}
@@ -941,38 +940,7 @@ defmodule Dmp.Diff do
         i = div(longtext_length + 1, 2)
         hm2 = half_match_impl(longtext, shorttext, i)
 
-        hm =
-          case {hm1, hm2} do
-            {nil, nil} ->
-              nil
-
-            {_hm1, nil} ->
-              hm1
-
-            {nil, _hm2} ->
-              hm2
-
-            {{_, _, _, _, common1}, {_, _, _, _, common2}} ->
-              # Both matched.  Select the longest.
-              if String.length(common1) > String.length(common2) do
-                hm1
-              else
-                hm2
-              end
-          end
-
-        case hm do
-          {prefix1, suffix1, prefix2, suffix2, common} ->
-            # A half-match was found, sort out the return data.
-            if text1_length > text2_length do
-              hm
-            else
-              {prefix2, suffix2, prefix1, suffix1, common}
-            end
-
-          _ ->
-            nil
-        end
+        longer_half_match(hm1, hm2) |> sorted_half_match(normal_order)
       end
     end
   end
@@ -986,7 +954,6 @@ defmodule Dmp.Diff do
     best_half_match_loop({"", "", "", "", ""}, seed, i, j, longtext, shorttext)
   end
 
-  # Verified tail-recursive
   defp best_half_match_loop(
          {best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b, best_common},
          _seed,
@@ -1035,8 +1002,29 @@ defmodule Dmp.Diff do
     )
   end
 
+  defp longer_half_match({_, _, _, _, common1} = hm1, {_, _, _, _, common2} = hm2) do
+    # Both matched.  Select the longest.
+    if String.length(common1) > String.length(common2) do
+      hm1
+    else
+      hm2
+    end
+  end
+
+  defp longer_half_match(hm1, nil), do: hm1
+  defp longer_half_match(nil, hm2), do: hm2
+  defp longer_half_match(_, _), do: nil
+
+  # A half-match was found, sort out the return data.
+  def sorted_half_match(nil, _), do: nil
+  def sorted_half_match(hm, true), do: hm
+
+  def sorted_half_match({prefix1, suffix1, prefix2, suffix2, common}, _) do
+    {prefix2, suffix2, prefix1, suffix1, common}
+  end
+
   @typedoc "A double-ended queue of equalities."
-  @type diffqueue() :: :queue.queue()
+  @typep diffqueue() :: :queue.queue()
 
   defp safe_drop_r(queue, n \\ 1)
 
@@ -1054,16 +1042,6 @@ defmodule Dmp.Diff do
 
   defp safe_drop_r(queue, _), do: queue
 
-  @type semantic_acc() :: {
-          boolean(),
-          diffqueue(),
-          nil | String.t(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer()
-        }
-
   @doc """
   Reduce the number of edits in a diff by eliminating semantically trivial equalities.
 
@@ -1077,8 +1055,7 @@ defmodule Dmp.Diff do
       diffs
       |> Cursor.from_list(position: 0)
 
-    {diffs, changes} =
-      replace_small_equalities_loop(diffs, {false, :queue.new(), nil, 0, 0, 0, 0})
+    {diffs, changes} = split_small_equalities(diffs, {false, :queue.new(), nil, 0, 0, 0, 0})
 
     diffs =
       if changes do
@@ -1098,14 +1075,9 @@ defmodule Dmp.Diff do
     end
   end
 
-  @spec replace_small_equalities_loop(
-          Cursor.t(),
-          semantic_acc()
-        ) :: {difflist(), boolean()}
   # `equalities` - Double-ended queue of equalities..
   # `last_equality` - Always equal to the text of `:queue.peek_r(equalities)`.
-  # Verified tail-recursive
-  defp replace_small_equalities_loop(
+  defp split_small_equalities(
          %Cursor{current: nil} = diffs,
          {changes, _equalities, _last_equality, _length_insertions1, _length_deletions1,
           _length_insertions2, _length_deletions2}
@@ -1114,7 +1086,7 @@ defmodule Dmp.Diff do
     {diffs, changes}
   end
 
-  defp replace_small_equalities_loop(
+  defp split_small_equalities(
          %Cursor{current: this_diff} = diffs,
          {changes, equalities, last_equality, length_insertions1, length_deletions1,
           length_insertions2, length_deletions2}
@@ -1126,7 +1098,8 @@ defmodule Dmp.Diff do
      length_deletions2} =
       if op == :equal do
         # Equality found. Insert at rear of queue.
-        equalities = :queue.in(this_diff, equalities)
+        eq_pos = Cursor.position(diffs)
+        equalities = :queue.in(eq_pos, equalities)
 
         {Cursor.move_forward(diffs), changes, equalities, text, length_insertions2,
          length_deletions2, 0, 0}
@@ -1145,8 +1118,8 @@ defmodule Dmp.Diff do
              String.length(last_equality) <= max(length_insertions1, length_deletions1) &&
              String.length(last_equality) <= max(length_insertions2, length_deletions2) do
           # Walk back to offending equality.
-          eq = :queue.get_r(equalities)
-          diffs = Cursor.find_back!(diffs, eq)
+          eq_pos = :queue.get_r(equalities)
+          diffs = Cursor.move_to(diffs, eq_pos)
 
           # Replace equality with a delete.
           # Insert a corresponding an insert.
@@ -1164,14 +1137,12 @@ defmodule Dmp.Diff do
           if :queue.is_empty(equalities) do
             # There are no previous equalities, walk back to the start.
             # Reset the counters
-
             {Cursor.move_first(diffs), true, equalities, nil, 0, 0, 0, 0}
           else
-            eq = :queue.get_r(equalities)
+            eq_pos = :queue.get_r(equalities)
             # There is a safe equality we can fall back to.
             # Reset the counters
-            diffs = Cursor.find_back!(diffs, eq)
-
+            diffs = Cursor.move_to(diffs, eq_pos)
             {diffs, true, equalities, nil, 0, 0, 0, 0}
           end
         else
@@ -1180,7 +1151,7 @@ defmodule Dmp.Diff do
         end
       end
 
-    replace_small_equalities_loop(
+    split_small_equalities(
       cursor,
       {changes, equalities, last_equality, length_insertions1, length_deletions1,
        length_insertions2, length_deletions2}
@@ -1193,7 +1164,6 @@ defmodule Dmp.Diff do
   # e.g: <del>xxxabc</del><ins>defxxx</ins>
   #   -> <ins>def</ins>xxx<del>abc</del>
   # Only extract an overlap if it is as big as the edit ahead or behind it.
-  # Verified tail-recursive
   @spec cleanup_overlap_loop(Cursor.t()) :: difflist()
   defp cleanup_overlap_loop(%Cursor{current: nil} = diffs) do
     diffs = Cursor.to_list(diffs)
@@ -1272,10 +1242,6 @@ defmodule Dmp.Diff do
     |> cleanup_semantic_lossless_loop()
   end
 
-  @type score_loop_acc() :: {non_neg_integer(), String.t(), String.t(), String.t()}
-
-  @spec cleanup_semantic_lossless_loop(Cursor.t()) :: difflist()
-  # Verified tail-recursive
   # Intentionally ignore the first and last element (don't need checking).
   defp cleanup_semantic_lossless_loop(%Cursor{next: []} = diffs) do
     Cursor.to_list(diffs)
@@ -1298,8 +1264,8 @@ defmodule Dmp.Diff do
 
         {equality1, edit, equality2} = {text1, suffix <> text2, suffix <> equality2}
 
-        score1 = cleanup_semantic_score(equality1, edit)
-        score2 = cleanup_semantic_score(edit, equality2)
+        score1 = semantic_score(equality1, edit)
+        score2 = semantic_score(edit, equality2)
         score = score1 + score2
 
         {_best_score, best_equality1, best_edit, best_equality2} =
@@ -1361,13 +1327,6 @@ defmodule Dmp.Diff do
     |> cleanup_semantic_lossless_loop()
   end
 
-  @spec best_score_loop(
-          String.t(),
-          String.t(),
-          String.t(),
-          score_loop_acc()
-        ) :: score_loop_acc()
-  # Verified tail-recursive
   defp best_score_loop(
          equality1,
          edit,
@@ -1386,8 +1345,8 @@ defmodule Dmp.Diff do
       else
         equality1 = equality1 <> edit_first
         edit = edit <> equality2_first
-        score1 = cleanup_semantic_score(equality1, edit)
-        score2 = cleanup_semantic_score(edit, equality2)
+        score1 = semantic_score(equality1, edit)
+        score2 = semantic_score(edit, equality2)
         score = score1 + score2
         # The >= encourages trailing rather than leading whitespace on edits.
         if score >= best_score do
@@ -1411,19 +1370,31 @@ defmodule Dmp.Diff do
   @blank_line_end ~r/\n\r?\n\Z/
   @blank_line_start ~r/\A\r?\n\r?\n/
 
-  # Given two strings, compute a score representing whether the internal
-  # boundary falls on logical boundaries.
-  # Scores range from 6 (best) to 0 (worst).
-  # `one` - First string.
-  # `two` - Second string.
-  # Returns the score.
-  @spec cleanup_semantic_score(String.t(), String.t()) :: non_neg_integer()
+  @doc """
+  Given two strings, compute a score representing whether the internal
+  boundary falls on logical boundaries.
 
-  # Edges are the best.
-  defp cleanup_semantic_score("", _two), do: 6
-  defp cleanup_semantic_score(_one, ""), do: 6
+  Scores range from 6 (best) to 0 (worst).
 
-  defp cleanup_semantic_score(one, two) do
+    * `one` - First string.
+    * `two` - Second string.
+
+  Scores are:
+
+    * 6 if `one` or `two` is an empty string.
+    * 5 if a blank line ends in `one` or a blank line starts in `two`.
+    * 4 if `one` ends, or `two` starts, with a newline.
+    * 3 if `one` ends in a punctuation and `two` starts with white space.
+    * 2 if `one` ends, or `two` starts, with white space.
+    * 1 if `one` ends, or `two` starts, with a non-alphanumeric.
+    * 0 otherwise
+  """
+  @spec semantic_score(String.t(), String.t()) :: non_neg_integer()
+  def semantic_score("", _two), do: 6
+  def semantic_score(_one, ""), do: 6
+
+  # credo:disable-for-lines:38 Credo.Check.Refactor.CyclomaticComplexity
+  def semantic_score(one, two) do
     char1 = String.last(one)
     char2 = String.first(two)
 
@@ -1462,16 +1433,16 @@ defmodule Dmp.Diff do
     end
   end
 
-  @type efficiency_acc() :: {
-          boolean(),
-          diffqueue(),
-          nil | String.t(),
-          t(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer()
-        }
+  @typep efficiency_acc() :: {
+           boolean(),
+           diffqueue(),
+           nil | String.t(),
+           non_neg_integer(),
+           non_neg_integer(),
+           non_neg_integer(),
+           non_neg_integer(),
+           non_neg_integer()
+         }
 
   @doc """
   Reduce the number of edits in a diff by eliminating operationally trivial equalities.
@@ -1484,13 +1455,11 @@ defmodule Dmp.Diff do
   def cleanup_efficiency([], _diff_edit_cost), do: []
 
   def cleanup_efficiency(diffs, diff_edit_cost) do
-    first_diff = List.first(diffs)
-
     {diffs, changes} =
       diffs
       |> Cursor.from_list(position: 0)
       |> cleanup_efficiency_loop(
-        {false, :queue.new(), nil, first_diff, 0, 0, 0, 0},
+        {false, :queue.new(), nil, 0, 0, 0, 0, 0},
         diff_edit_cost
       )
 
@@ -1503,13 +1472,12 @@ defmodule Dmp.Diff do
 
   # `equalities` - Double-ended queue of equalities.
   # `last_equality` - Always equal to the text of `equalities.get_r()`
-  # `safe_diff` - The last Diff that is known to be unsplittable.
+  # `safe_diff` - The position of the last diff that is known to be unsplittable.
   # `pre_ins` - 1 if there is an insertion operation before the last equality.
   # `pre_del` - 1 if there is a deletion operation before the last equality.
   # `post_ins` - 1 if there is an insertion operation after the last equality.
   # `post_del` - 1 if there is a deletion operation after the last equality.
   # `diff_edit_cost` - Cost of an empty edit operation in terms of edit characters.
-  # Verified tail-recursive
   @spec cleanup_efficiency_loop(Cursor.t(), efficiency_acc(), non_neg_integer()) ::
           {difflist(), boolean()}
   defp cleanup_efficiency_loop(
@@ -1521,93 +1489,17 @@ defmodule Dmp.Diff do
        do: {Cursor.to_list(diffs), changes}
 
   defp cleanup_efficiency_loop(
-         %Cursor{current: this_diff} = diffs,
-         {changes, equalities, last_equality, safe_diff, pre_ins, pre_del, post_ins, post_del},
+         %Cursor{current: {op, _} = this_diff} = diffs,
+         acc,
          diff_edit_cost
        ) do
-    {op, text} = this_diff
-
     {diffs, acc} =
       if op == :equal do
         # Equality found.
-
-        {equalities, last_equality, safe_diff, pre_ins, pre_del} =
-          if String.length(text) < diff_edit_cost && (post_ins != 0 || post_del != 0) do
-            # Candidate found. Insert at rear of queue.
-            equalities = :queue.in(this_diff, equalities)
-            {equalities, text, safe_diff, post_ins, post_del}
-          else
-            # Not a candidate, and can never become one.
-            {:queue.new(), nil, this_diff, pre_ins, pre_del}
-          end
-
-        {Cursor.move_forward(diffs),
-         {changes, equalities, last_equality, safe_diff, pre_ins, pre_del, 0, 0}}
+        handle_efficiency_equality(diffs, this_diff, acc, diff_edit_cost)
       else
         # An insertion or deletion.
-        {post_ins, post_del} =
-          if op == :delete do
-            {post_ins, 1}
-          else
-            {1, post_del}
-          end
-
-        # Five types to be split:
-        # <ins>A</ins><del>B</del>XY<ins>C</ins><del>D</del>
-        # <ins>A</ins>X<ins>C</ins><del>D</del>
-        # <ins>A</ins><del>B</del>X<ins>C</ins>
-        # <ins>A</del>X<ins>C</ins><del>D</del>
-        # <ins>A</ins><del>B</del>X<del>C</del>
-        ins_del_count = pre_ins + pre_del + post_ins + post_del
-
-        if !is_nil(last_equality) &&
-             (ins_del_count == 4 ||
-                (String.length(last_equality) * 2 < diff_edit_cost && ins_del_count == 3)) do
-          # Walk back to offending equality.
-          # Replace equality with a delete.
-          # Insert a corresponding an insert.
-
-          eq = :queue.get_r(equalities)
-
-          diffs =
-            diffs
-            |> Cursor.find_back!(eq)
-            |> Cursor.delete(1)
-            |> Cursor.insert_before([{:delete, last_equality}, {:insert, last_equality}])
-
-          # Throw away the equality we just deleted.
-          equalities = safe_drop_r(equalities)
-
-          {diffs, equalities, post_ins, post_del} =
-            if pre_ins != 0 && pre_del != 0 do
-              # No changes made which could affect previous entry, keep going.
-              {Cursor.move_forward(diffs), :queue.new(), 1, 1}
-            else
-              # Throw away the previous equality (it needs to be reevaluated).
-              equalities = safe_drop_r(equalities)
-
-              next_diff =
-                case :queue.peek_r(equalities) do
-                  {:value, eq} ->
-                    # There is an equality we can fall back to.
-                    eq
-
-                  :empty ->
-                    # There are no previous questionable equalities,
-                    # walk back to the last known safe diff.
-                    safe_diff
-                end
-
-              diffs = Cursor.find_back!(diffs, next_diff)
-
-              {diffs, equalities, 0, 0}
-            end
-
-          {diffs, {true, equalities, nil, safe_diff, pre_ins, pre_del, post_ins, post_del}}
-        else
-          {Cursor.move_forward(diffs),
-           {changes, equalities, last_equality, safe_diff, pre_ins, pre_del, post_ins, post_del}}
-        end
+        handle_efficiency_ins_del(diffs, this_diff, acc, diff_edit_cost)
       end
 
     diffs
@@ -1615,6 +1507,102 @@ defmodule Dmp.Diff do
       acc,
       diff_edit_cost
     )
+  end
+
+  defp handle_efficiency_equality(
+         diffs,
+         {_op, text},
+         {changes, equalities, _last_equality, safe_diff, pre_ins, pre_del, post_ins, post_del},
+         diff_edit_cost
+       ) do
+    eq_pos = Cursor.position(diffs)
+
+    {equalities, last_equality, safe_diff, pre_ins, pre_del} =
+      if String.length(text) < diff_edit_cost && (post_ins != 0 || post_del != 0) do
+        # Candidate found. Insert at rear of queue.
+        equalities = :queue.in(eq_pos, equalities)
+        {equalities, text, safe_diff, post_ins, post_del}
+      else
+        # Not a candidate, and can never become one.
+        # Remember our position.
+        {:queue.new(), nil, eq_pos, pre_ins, pre_del}
+      end
+
+    {Cursor.move_forward(diffs),
+     {changes, equalities, last_equality, safe_diff, pre_ins, pre_del, 0, 0}}
+  end
+
+  defp handle_efficiency_ins_del(
+         diffs,
+         {op, _text},
+         {changes, equalities, last_equality, safe_diff, pre_ins, pre_del, post_ins, post_del},
+         diff_edit_cost
+       ) do
+    # An insertion or deletion.
+    {post_ins, post_del} =
+      if op == :delete do
+        {post_ins, 1}
+      else
+        {1, post_del}
+      end
+
+    # Five types to be split:
+    # <ins>A</ins><del>B</del>XY<ins>C</ins><del>D</del>
+    # <ins>A</ins>X<ins>C</ins><del>D</del>
+    # <ins>A</ins><del>B</del>X<ins>C</ins>
+    # <ins>A</del>X<ins>C</ins><del>D</del>
+    # <ins>A</ins><del>B</del>X<del>C</del>
+    ins_del_count = pre_ins + pre_del + post_ins + post_del
+
+    if !is_nil(last_equality) &&
+         (ins_del_count == 4 ||
+            (String.length(last_equality) * 2 < diff_edit_cost && ins_del_count == 3)) do
+      # Walk back to offending equality.
+      # Replace equality with a delete.
+      # Insert a corresponding an insert.
+      eq_pos = :queue.get_r(equalities)
+
+      diffs =
+        diffs
+        |> Cursor.move_to(eq_pos)
+        |> Cursor.delete(1)
+        |> Cursor.insert_before([{:delete, last_equality}, {:insert, last_equality}])
+
+      {diffs, equalities, post_ins, post_del} =
+        update_equalities_and_move_cursor(diffs, equalities, safe_diff, pre_ins, pre_del)
+
+      {diffs, {true, equalities, nil, safe_diff, pre_ins, pre_del, post_ins, post_del}}
+    else
+      {Cursor.move_forward(diffs),
+       {changes, equalities, last_equality, safe_diff, pre_ins, pre_del, post_ins, post_del}}
+    end
+  end
+
+  defp update_equalities_and_move_cursor(diffs, equalities, safe_diff, pre_ins, pre_del) do
+    # Throw away the equality we just deleted.
+    equalities = safe_drop_r(equalities)
+
+    if pre_ins != 0 && pre_del != 0 do
+      # No changes made which could affect previous entry, keep going.
+      {Cursor.move_forward(diffs), :queue.new(), 1, 1}
+    else
+      # Throw away the previous equality (it needs to be reevaluated).
+      equalities = safe_drop_r(equalities)
+
+      pos =
+        case :queue.peek_r(equalities) do
+          {:value, eq_pos} ->
+            # There is an equality we can fall back to.
+            eq_pos
+
+          :empty ->
+            # There are no previous questionable equalities,
+            # walk back to the last known safe diff.
+            safe_diff
+        end
+
+      {Cursor.move_to(diffs, pos), equalities, 0, 0}
+    end
   end
 
   @doc """
@@ -1660,7 +1648,7 @@ defmodule Dmp.Diff do
           {non_neg_integer(), non_neg_integer(), String.t(), String.t()}
 
   @spec first_pass_loop(Cursor.t(), first_pass_acc()) :: difflist()
-  # Verified tail-recursive
+
   defp first_pass_loop(%Cursor{current: nil} = diffs, _acc) do
     Cursor.to_list(diffs)
   end
@@ -1685,91 +1673,16 @@ defmodule Dmp.Diff do
           # Upon reaching an equality, check for prior redundancies.
           diffs =
             if count_delete + count_insert > 1 do
-              # Delete the offending records
-              diffs = Cursor.delete_before(diffs, count_delete + count_insert)
-
-              {diffs, text_insert, text_delete} =
-                if count_delete > 0 && count_insert > 0 do
-                  # Both types.
-                  # Factor out any common prefixes.
-                  {prefix, text1, text2} = common_prefix(text_insert, text_delete)
-
-                  {diffs, text_insert, text_delete} =
-                    if prefix != "" do
-                      {prev_diff, _, _} = Cursor.get(diffs)
-
-                      diffs1 =
-                        if !is_nil(prev_diff) do
-                          {prev_op, prev_text} = undiff(prev_diff)
-
-                          if prev_op != :equal do
-                            raise RuntimeError, "Previous diff should have been an equality."
-                          end
-
-                          new_prev = {:equal, prev_text <> prefix}
-
-                          diffs
-                          |> Cursor.delete_before(1)
-                          |> Cursor.insert_before([new_prev])
-                        else
-                          new_head = {:equal, prefix}
-
-                          diffs
-                          |> Cursor.insert_at_head([new_head])
-                        end
-
-                      {diffs1, text1, text2}
-                    else
-                      {diffs, text_insert, text_delete}
-                    end
-
-                  # Factor out any common suffixes.
-                  {suffix, text1, text2} = common_suffix(text_insert, text_delete)
-
-                  if suffix != "" do
-                    new_cur = {:equal, suffix <> text}
-
-                    diffs1 =
-                      diffs
-                      |> Cursor.delete(1)
-                      |> Cursor.insert([new_cur])
-
-                    {diffs1, text1, text2}
-                  else
-                    {diffs, text_insert, text_delete}
-                  end
-                else
-                  {diffs, text_insert, text_delete}
-                end
-
-              # Insert the merged records.
-              diffs =
-                if text_delete != "" do
-                  Cursor.insert_before(diffs, [{:delete, text_delete}])
-                else
-                  diffs
-                end
-
-              if text_insert != "" do
-                Cursor.insert_before(diffs, [{:insert, text_insert}])
-              else
-                diffs
-              end
+              combine_previous_inequalities(
+                diffs,
+                text,
+                count_delete,
+                count_insert,
+                text_delete,
+                text_insert
+              )
             else
-              {prev_op, prev_text} = undiff(prev_diff)
-
-              if !is_nil(prev_diff) && prev_op == :equal do
-                # Merge this equality with the previous one.
-
-                new_cur = {prev_op, prev_text <> text}
-
-                diffs
-                |> Cursor.move_back(1)
-                |> Cursor.delete(2)
-                |> Cursor.insert([new_cur])
-              else
-                diffs
-              end
+              merge_with_previous_equality(diffs, text, prev_diff)
             end
 
           {diffs, {0, 0, "", ""}}
@@ -1779,6 +1692,104 @@ defmodule Dmp.Diff do
     |> Cursor.move_forward()
     |> first_pass_loop(acc)
   end
+
+  def combine_previous_inequalities(
+        diffs,
+        text,
+        count_delete,
+        count_insert,
+        text_delete,
+        text_insert
+      ) do
+    # Delete the offending records
+    diffs = Cursor.delete_before(diffs, count_delete + count_insert)
+
+    {diffs, text_delete, text_insert} =
+      if count_delete > 0 && count_insert > 0 do
+        # Both types.
+        # Factor out any common prefixes.
+        {diffs, text_delete, text_insert} = factor_out_prefixes(diffs, text_delete, text_insert)
+        # Factor out any common suffixes.
+        factor_out_suffixes(diffs, text, text_delete, text_insert)
+      else
+        {diffs, text_delete, text_insert}
+      end
+
+    # Insert the merged records.
+    diffs =
+      if text_delete != "" do
+        Cursor.insert_before(diffs, [{:delete, text_delete}])
+      else
+        diffs
+      end
+
+    if text_insert != "" do
+      Cursor.insert_before(diffs, [{:insert, text_insert}])
+    else
+      diffs
+    end
+  end
+
+  def factor_out_prefixes(diffs, text_delete, text_insert) do
+    {prefix, text1, text2} = common_prefix(text_delete, text_insert)
+
+    if prefix != "" do
+      {prev_diff, _, _} = Cursor.get(diffs)
+
+      diffs =
+        if is_tuple(prev_diff) do
+          {prev_op, prev_text} = undiff(prev_diff)
+
+          if prev_op != :equal do
+            raise RuntimeError, "Previous diff should have been an equality."
+          end
+
+          new_prev = {:equal, prev_text <> prefix}
+
+          diffs
+          |> Cursor.delete_before(1)
+          |> Cursor.insert_before([new_prev])
+        else
+          new_head = {:equal, prefix}
+
+          diffs
+          |> Cursor.insert_at_head([new_head])
+        end
+
+      {diffs, text1, text2}
+    else
+      {diffs, text_delete, text_insert}
+    end
+  end
+
+  def factor_out_suffixes(diffs, text, text_delete, text_insert) do
+    {suffix, text1, text2} = common_suffix(text_delete, text_insert)
+
+    if suffix != "" do
+      new_cur = {:equal, suffix <> text}
+
+      diffs =
+        diffs
+        |> Cursor.delete(1)
+        |> Cursor.insert([new_cur])
+
+      {diffs, text1, text2}
+    else
+      {diffs, text_delete, text_insert}
+    end
+  end
+
+  defp merge_with_previous_equality(diffs, text, {:equal, prev_text}) do
+    # Merge this equality with the previous one.
+    new_cur = {:equal, prev_text <> text}
+
+    diffs
+    |> Cursor.move_back(1)
+    |> Cursor.delete(2)
+    |> Cursor.insert([new_cur])
+  end
+
+  defp merge_with_previous_equality(diffs, _, _), do: diffs
 
   # Second pass: look for single edits surrounded on both sides by equalities
   # which can be shifted sideways to eliminate an equality.
@@ -2061,66 +2072,69 @@ defmodule Dmp.Diff do
   """
   @spec from_delta(String.t(), String.t()) :: nil | difflist()
   def from_delta(text1, delta) do
-    text1_length = String.length(text1)
-
     {diffs, pointer} =
-      String.split(delta, "\t")
-      |> Enum.reduce({[], 0}, fn
-        "", acc ->
-          # Blank tokens are ok (from a trailing \t)
-          acc
-
-        token, {diffs, pointer} ->
-          # Each token begins with a one character parameter which specifies the
-          # operation of this token (delete, insert, equality).
-          {op, param} = String.split_at(token, 1)
-
-          case op do
-            "+" ->
-              # decode would change all "+" to " "
-              param = String.replace(param, "+", "%2B") |> URI.decode()
-              {[{:insert, param} | diffs], pointer}
-
-            _ ->
-              n =
-                case Integer.parse(param) do
-                  {n, ""} ->
-                    cond do
-                      n < 0 ->
-                        raise ArgumentError, "Negative number in from_delta: #{param}"
-
-                      pointer + n > text1_length ->
-                        raise ArgumentError,
-                              "Delta length (#{pointer + n}) larger than source text length (#{text1_length})"
-
-                      true ->
-                        n
-                    end
-
-                  _ ->
-                    raise ArgumentError, "Invalid number in from_delta: #{param}"
-                end
-
-              text = substring(text1, pointer, pointer + n)
-
-              case op do
-                "=" ->
-                  {[{:equal, text} | diffs], pointer + n}
-
-                "-" ->
-                  {[{:delete, text} | diffs], pointer + n}
-
-                _ ->
-                  raise ArgumentError, "Invalid diff operation in diff_fromDelta: #{op}"
-              end
-          end
+      delta
+      |> String.split("\t")
+      |> Enum.reduce({[], 0}, fn token, {diffs, pointer} ->
+        parse_delta_token(token, diffs, pointer, text1)
       end)
 
-    if pointer != text1_length do
+    if pointer != String.length(text1) do
       raise ArgumentError,
-            "Delta length (#{pointer}) smaller than source text length (#{text1_length})"
+            "Delta length (#{pointer}) smaller than source text length (#{String.length(text1)})"
     end
 
     Enum.reverse(diffs)
+  end
+
+  # @variable token
+  # @accumulator {diffs, pointer}
+  # @constant text1
+  defp parse_delta_token("", diffs, pointer, _), do: {diffs, pointer}
+
+  defp parse_delta_token(token, diffs, pointer, text1) do
+    # Each token begins with a one character parameter which specifies the
+    # operation of this token (delete, insert, equality).
+    {op, param} = String.split_at(token, 1)
+
+    if op == "+" do
+      # decode would change all "+" to " "
+      param = param |> String.replace("+", "%2B") |> URI.decode()
+      {[{:insert, param} | diffs], pointer}
+    else
+      n = parse_delta_integer_param(param, pointer, text1)
+      text = substring(text1, pointer, pointer + n)
+
+      case op do
+        "=" ->
+          {[{:equal, text} | diffs], pointer + n}
+
+        "-" ->
+          {[{:delete, text} | diffs], pointer + n}
+
+        _ ->
+          raise ArgumentError, "Invalid diff operation in from_delta: '#{op}'"
+      end
+    end
+  end
+
+  defp parse_delta_integer_param(param, pointer, text1) do
+    case Integer.parse(param) do
+      {n, ""} ->
+        cond do
+          n < 0 ->
+            raise ArgumentError, "Negative number in from_delta: #{param}"
+
+          pointer + n > String.length(text1) ->
+            raise ArgumentError,
+                  "Delta length (#{pointer + n}) larger than source text length (#{String.length(text1)})"
+
+          true ->
+            n
+        end
+
+      _ ->
+        raise ArgumentError, "Invalid number in from_delta: #{param}"
+    end
   end
 end

@@ -2,7 +2,6 @@ defmodule MatchTest do
   use ExUnit.Case
 
   alias Dmp.{Match, Options}
-
   doctest Dmp.Match
 
   defp with_match_threshold(t) do

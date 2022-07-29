@@ -42,50 +42,43 @@ defmodule Dmp.Patch do
           length1: length1,
           length2: length2
         }) do
-      coords1 =
-        case length1 do
-          0 ->
-            "#{start1},0"
-
-          1 ->
-            "#{start1 + 1}"
-
-          _ ->
-            "#{start1 + 1},#{length1}"
-        end
-
-      coords2 =
-        case length2 do
-          0 ->
-            "#{start2},0"
-
-          1 ->
-            "#{start2 + 1}"
-
-          _ ->
-            "#{start2 + 1},#{length2}"
-        end
-
+      coords1 = patch_location(start1, length1)
+      coords2 = patch_location(start2, length2)
       header = "@@ -#{coords1} +#{coords2} @@\n"
       # Escape the body of the patch with %xx notation.
       diffs
-      |> Enum.reduce(header, fn {op, text}, acc ->
-        op_text =
-          case op do
-            :insert ->
-              "+"
-
-            :delete ->
-              "-"
-
-            :equal ->
-              " "
-          end
-
-        text = uri_encode(text)
-        acc <> op_text <> text <> "\n"
-      end)
+      |> Enum.reduce(header, fn diff, acc -> append_diff_contents(diff, acc) end)
       |> unescape_for_encode_uri_compatability()
+    end
+
+    defp patch_location(start, length) do
+      case length do
+        0 ->
+          "#{start},0"
+
+        1 ->
+          "#{start + 1}"
+
+        _ ->
+          "#{start + 1},#{length}"
+      end
+    end
+
+    defp append_diff_contents({op, text}, acc) do
+      op_text =
+        case op do
+          :insert ->
+            "+"
+
+          :delete ->
+            "-"
+
+          :equal ->
+            " "
+        end
+
+      text = uri_encode(text)
+      acc <> op_text <> text <> "\n"
     end
   end
 
@@ -268,7 +261,12 @@ defmodule Dmp.Patch do
     end
   end
 
-  # Verified tail-recursive
+  # Start with text1 (`prepatch_text`) and apply the diffs until we arrive at
+  # text2 (`postpatch_text`).
+  # We recreate the patches one by one to determine context info.
+  # `char_count1` Number of characters into the text1 string.
+  # `char_count2` Number of characters into the text2 string.
+
   defp make_loop(
          %Cursor{current: nil},
          {patches, patch, prepatch_text, _postpatch_text, _char_count1, _char_count2},
@@ -279,102 +277,155 @@ defmodule Dmp.Patch do
   end
 
   defp make_loop(
-         %Cursor{current: {op, text} = diff} = diffs,
+         diffs,
          {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2},
          patch_margin,
          match_max_bits
        ) do
-    # Start with text1 (prepatch_text) and apply the diffs until we arrive at
-    # text2 (postpatch_text). We recreate the patches one by one to determine
-    # context info.
-    # `char_count1` Number of characters into the text1 string.
-    # `char_count2` Number of characters into the text2 string.
-    patch =
-      if patch.diffs == [] && op != :equal do
-        # A new patch starts here.
-        %Patch{patch | start1: char_count1, start2: char_count2}
-      else
-        patch
-      end
+    patch = maybe_new_patch(diffs, patch, char_count1, char_count2)
 
-    text_length = String.length(text)
+    acc = {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2}
 
-    {patches, patch, prepatch_text, postpatch_text, char_count1} =
-      case op do
-        :insert ->
-          {patches,
-           %Patch{patch | diffs: patch.diffs ++ [diff], length2: patch.length2 + text_length},
-           prepatch_text,
-           substring(postpatch_text, 0, char_count2) <>
-             text <> substring(postpatch_text, char_count2), char_count1}
-
-        :delete ->
-          {patches,
-           %Patch{patch | diffs: patch.diffs ++ [diff], length1: patch.length1 + text_length},
-           prepatch_text,
-           substring(postpatch_text, 0, char_count2) <>
-             substring(postpatch_text, char_count2 + text_length), char_count1}
-
-        :equal ->
-          patch =
-            if text_length <= 2 * patch_margin &&
-                 patch.diffs != [] && Cursor.has_next?(diffs) do
-              # Small equality inside a patch.
-              %Patch{
-                patch
-                | diffs: patch.diffs ++ [diff],
-                  length1: patch.length1 + text_length,
-                  length2: patch.length2 + text_length
-              }
-            else
-              patch
-            end
-
-          if text_length >= 2 * patch_margin do
-            # Time for a new patch.
-            if patch.diffs != [] do
-              patch = add_context(patch, prepatch_text, patch_margin, match_max_bits)
-              patches = patches ++ [patch]
-
-              {
-                patches,
-                %Patch{},
-                # Unlike Unidiff, our patch lists have a rolling context.
-                # https://github.com/google/diff-match-patch/wiki/Unidiff
-                # Update prepatch text & pos to reflect the application of the
-                # just completed patch.
-                postpatch_text,
-                postpatch_text,
-                char_count2
-              }
-            else
-              {patches, patch, prepatch_text, postpatch_text, char_count1}
-            end
-          else
-            {patches, patch, prepatch_text, postpatch_text, char_count1}
-          end
-      end
-
-    # Update the current character count.
-    {char_count1, char_count2} =
-      case op do
-        :insert ->
-          {char_count1, char_count2 + text_length}
-
-        :delete ->
-          {char_count1 + text_length, char_count2}
-
-        :equal ->
-          {char_count1 + text_length, char_count2 + text_length}
-      end
+    # Add to patch.diffs, then update the current character count
+    # (`char_count1` and `char_count2`).
+    acc = add_diff_to_patch(diffs, acc, patch_margin, match_max_bits)
 
     diffs
     |> Cursor.move_forward()
     |> make_loop(
-      {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2},
+      acc,
       patch_margin,
       match_max_bits
     )
+  end
+
+  # For `:insert` and `:delete` diffs, a new patch starting at the current character count.
+  defp maybe_new_patch(%Cursor{current: {:equal, _}}, patch, _start1, _start2), do: patch
+
+  defp maybe_new_patch(_diffs, %Patch{diffs: []} = patch, start1, start2) do
+    %Patch{patch | start1: start1, start2: start2}
+  end
+
+  defp maybe_new_patch(_diffs, patch, _start1, _start2), do: patch
+
+  # Add an `:insert` diff and update the current character count.
+  defp add_diff_to_patch(
+         %Cursor{current: {:insert, text} = this_diff},
+         {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2},
+         _patch_margin,
+         _match_max_bits
+       ) do
+    text_length = String.length(text)
+
+    {patches,
+     %Patch{patch | diffs: patch.diffs ++ [this_diff], length2: patch.length2 + text_length},
+     prepatch_text,
+     substring(postpatch_text, 0, char_count2) <>
+       text <> substring(postpatch_text, char_count2), char_count1, char_count2 + text_length}
+  end
+
+  # Add a `:delete` diff and update the current character count.
+  defp add_diff_to_patch(
+         %Cursor{current: {:delete, text} = this_diff},
+         {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2},
+         _patch_margin,
+         _match_max_bits
+       ) do
+    text_length = String.length(text)
+
+    {patches,
+     %Patch{patch | diffs: patch.diffs ++ [this_diff], length1: patch.length1 + text_length},
+     prepatch_text,
+     substring(postpatch_text, 0, char_count2) <>
+       substring(postpatch_text, char_count2 + text_length), char_count1 + text_length,
+     char_count2}
+  end
+
+  # Nothing to do for equality with empty diffs, just update the current character count.
+  defp add_diff_to_patch(
+         %Cursor{current: {:equal, text}},
+         {patches, %Patch{diffs: []} = patch, prepatch_text, postpatch_text, char_count1,
+          char_count2},
+         _patch_margin,
+         _match_max_bits
+       ) do
+    text_length = String.length(text)
+
+    {patches, patch, prepatch_text, postpatch_text, char_count1 + text_length,
+     char_count2 + text_length}
+  end
+
+  # Add an `:equal` diff and update the current character count.
+  defp add_diff_to_patch(
+         %Cursor{current: {:equal, text}} = diffs,
+         {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2},
+         patch_margin,
+         match_max_bits
+       ) do
+    text_length = String.length(text)
+
+    if text_length <= 2 * patch_margin do
+      patch = small_equality_patch(diffs, patch, text_length)
+
+      {patches, patch, prepatch_text, postpatch_text, char_count1 + text_length,
+       char_count2 + text_length}
+    else
+      {patches, patch, prepatch_text, postpatch_text, char_count1} =
+        large_equality_patch(
+          patches,
+          patch,
+          prepatch_text,
+          postpatch_text,
+          char_count1,
+          char_count2,
+          patch_margin,
+          match_max_bits
+        )
+
+      {patches, patch, prepatch_text, postpatch_text, char_count1 + text_length,
+       char_count2 + text_length}
+    end
+  end
+
+  # Small equality inside a patch.
+  # No op if this is the last diff.
+  defp small_equality_patch(%Cursor{next: []}, patch, _), do: patch
+
+  defp small_equality_patch(%Cursor{current: this_diff}, patch, text_length) do
+    %Patch{
+      patch
+      | diffs: patch.diffs ++ [this_diff],
+        length1: patch.length1 + text_length,
+        length2: patch.length2 + text_length
+    }
+  end
+
+  # Equality diff is too big.
+  # Time for a new patch.
+  defp large_equality_patch(
+         patches,
+         patch,
+         prepatch_text,
+         postpatch_text,
+         _char_count1,
+         char_count2,
+         patch_margin,
+         match_max_bits
+       ) do
+    patch = add_context(patch, prepatch_text, patch_margin, match_max_bits)
+    patches = patches ++ [patch]
+
+    {
+      patches,
+      %Patch{},
+      # Unlike Unidiff, our patch lists have a rolling context.
+      # https://github.com/google/diff-match-patch/wiki/Unidiff
+      # Update prepatch text and pos to reflect the application of the
+      # just completed patch.
+      postpatch_text,
+      postpatch_text,
+      char_count2
+    }
   end
 
   @doc """
@@ -421,36 +472,8 @@ defmodule Dmp.Patch do
        ) do
     expected_loc = patch.start2 + delta
     text1 = Diff.text1(patch.diffs)
-    text1_length = String.length(text1)
-    match_max_bits = opts.match_max_bits
 
-    {start_loc, end_loc} =
-      if text1_length > match_max_bits do
-        # split_max will only provide an oversized pattern in the case of
-        # a monster delete.
-        start_loc = Match.main(text, substring(text1, 0, match_max_bits), expected_loc, opts)
-
-        if start_loc != -1 do
-          end_loc =
-            Match.main(
-              text,
-              substring(text1, text1_length - match_max_bits),
-              expected_loc + text1_length - match_max_bits,
-              opts
-            )
-
-          if end_loc == -1 || start_loc >= end_loc do
-            # Can't find valid trailing context.  Drop this patch.
-            {-1, end_loc}
-          else
-            {start_loc, end_loc}
-          end
-        else
-          {start_loc, -1}
-        end
-      else
-        {Match.main(text, text1, expected_loc, opts), -1}
-      end
+    {start_loc, end_loc} = find_expected_match(text, text1, expected_loc, opts)
 
     if start_loc == -1 do
       # No match found.  :(
@@ -459,76 +482,114 @@ defmodule Dmp.Patch do
       {[false | results], text, delta, opts}
     else
       # Found a match.  :)
-      delta = start_loc - expected_loc
-
       text2 =
         if end_loc == -1 do
-          substring(text, start_loc, start_loc + text1_length)
+          substring(text, start_loc, start_loc + String.length(text1))
         else
-          substring(text, start_loc, end_loc + match_max_bits)
+          substring(text, start_loc, end_loc + opts.match_max_bits)
         end
 
-      {found, text} =
-        if text1 == text2 do
-          # Perfect match, just shove the replacement text in.
-          text2 = Diff.text2(patch.diffs)
-
-          text =
-            substring(text, 0, start_loc) <>
-              text2 <>
-              substring(text, start_loc + text1_length)
-
-          {true, text}
-        else
-          # Imperfect match.  Run a diff to get a framework of equivalent
-          # indices.
-          diffs = Diff.main_(text1, text2, false, opts)
-          lev = Diff.levenshtein(diffs)
-
-          if text1_length > match_max_bits &&
-               lev / text1_length > opts.patch_delete_threshold do
-            # The end points match, but the content is unacceptably bad.
-            {false, text}
-          else
-            diffs = Diff.cleanup_semantic_lossless(diffs)
-
-            {text, _index1} =
-              Enum.reduce(patch.diffs, {text, 0}, fn {op, dtext}, {text, index1} ->
-                dtext_length = String.length(dtext)
-
-                case op do
-                  :equal ->
-                    {text, index1 + dtext_length}
-
-                  :insert ->
-                    # Insertion
-                    index2 = Diff.x_index(diffs, index1)
-
-                    text =
-                      substring(text, 0, start_loc + index2) <>
-                        dtext <>
-                        substring(text, start_loc + index2)
-
-                    {text, index1 + dtext_length}
-
-                  :delete ->
-                    # Deletion
-                    index2 = Diff.x_index(diffs, index1)
-                    index3 = Diff.x_index(diffs, index1 + dtext_length)
-
-                    text =
-                      substring(text, 0, start_loc + index2) <>
-                        substring(text, start_loc + index3)
-
-                    {text, index1}
-                end
-              end)
-
-            {true, text}
-          end
-        end
-
+      {found, text} = apply_at_match(patch, text, text1, text2, start_loc, opts)
+      delta = start_loc - expected_loc
       {[found | results], text, delta, opts}
+    end
+  end
+
+  defp find_expected_match(text, text1, expected_loc, opts) do
+    text1_length = String.length(text1)
+
+    if text1_length > opts.match_max_bits do
+      # split_max will only provide an oversized pattern in the case of
+      # a monster delete.
+      start_loc = Match.main(text, substring(text1, 0, opts.match_max_bits), expected_loc, opts)
+
+      if start_loc != -1 do
+        end_loc =
+          Match.main(
+            text,
+            substring(text1, text1_length - opts.match_max_bits),
+            expected_loc + text1_length - opts.match_max_bits,
+            opts
+          )
+
+        if end_loc == -1 || start_loc >= end_loc do
+          # Can't find valid trailing context.  Drop this patch.
+          {-1, end_loc}
+        else
+          {start_loc, end_loc}
+        end
+      else
+        {start_loc, -1}
+      end
+    else
+      {Match.main(text, text1, expected_loc, opts), -1}
+    end
+  end
+
+  defp apply_at_match(patch, text, text1, text2, start_loc, _opts) when text1 == text2 do
+    # Perfect match, just shove the replacement text in.
+    {true,
+     substring(text, 0, start_loc) <>
+       Diff.text2(patch.diffs) <>
+       substring(text, start_loc + String.length(text1))}
+  end
+
+  defp apply_at_match(patch, text, text1, text2, start_loc, opts) do
+    # Imperfect match.  Run a diff to get a framework of equivalent indices.
+    diffs = Diff.main_(text1, text2, false, opts)
+
+    if poor_match(diffs, text1, opts) do
+      # The end points match, but the content is unacceptably bad.
+      {false, text}
+    else
+      diffs = Diff.cleanup_semantic_lossless(diffs)
+
+      {acc_text, _index1} =
+        Enum.reduce(patch.diffs, {text, 0}, fn diff, {acc_text, index1} ->
+          apply_match_diff(diff, acc_text, index1, diffs, start_loc)
+        end)
+
+      {true, acc_text}
+    end
+  end
+
+  # Returns true if the end points match, but the content is unacceptably bad.
+  def poor_match(diffs, text1, opts) do
+    lev = Diff.levenshtein(diffs)
+    text1_length = String.length(text1)
+
+    text1_length > opts.match_max_bits &&
+      lev / text1_length > opts.patch_delete_threshold
+  end
+
+  def apply_match_diff({op, first_text}, acc_text, index1, diffs, start_loc) do
+    dtext_length = String.length(first_text)
+
+    case op do
+      :equal ->
+        {acc_text, index1 + dtext_length}
+
+      :insert ->
+        # Insertion
+        index2 = Diff.x_index(diffs, index1)
+
+        acc_text =
+          substring(acc_text, 0, start_loc + index2) <>
+            first_text <>
+            substring(acc_text, start_loc + index2)
+
+        {acc_text, index1 + dtext_length}
+
+      :delete ->
+        # Deletion
+        index2 = Diff.x_index(diffs, index1)
+        index3 = Diff.x_index(diffs, index1 + dtext_length)
+
+        acc_text =
+          substring(acc_text, 0, start_loc + index2) <>
+            substring(acc_text, start_loc + index3)
+
+        {acc_text, index1}
     end
   end
 
@@ -558,100 +619,102 @@ defmodule Dmp.Patch do
         }
       end)
 
-    {first_patch, mid_patches, last_patch} =
-      case patches do
-        [one_patch] ->
-          {one_patch, [], nil}
+    # Separate first and last patch
+    {first_patch, mid_patches, last_patch} = split_patches(patches)
 
-        [first_patch, last_patch] ->
-          {first_patch, [], last_patch}
+    # Add padding before and after
+    first_patch = pad_first_patch(first_patch, null_padding)
+    # Sometimes the first patch and the last patch are the same
+    if is_nil(last_patch) do
+      first_patch = pad_last_patch(first_patch, null_padding)
+      {[first_patch], null_padding}
+    else
+      # Recombine
+      last_patch = pad_last_patch(last_patch, null_padding)
+      {[first_patch | mid_patches] ++ [last_patch], null_padding}
+    end
+  end
 
-        [first_patch | mid_patches] ->
-          {last_patch, mid_patches} = List.pop_at(mid_patches, -1)
-          {first_patch, mid_patches, last_patch}
-      end
+  # Separate first and last patch
+  defp split_patches([one_patch]), do: {one_patch, [], nil}
+  defp split_patches([first_patch, last_patch]), do: {first_patch, [], last_patch}
 
-    # Add some padding on start of first diff.
+  defp split_patches([first_patch | mid_patches]) do
+    {last_patch, mid_patches} = List.pop_at(mid_patches, -1)
+    {first_patch, mid_patches, last_patch}
+  end
+
+  # Add some padding on start of first diff.
+  defp pad_first_patch(first_patch, null_padding) do
+    padding_length = String.length(null_padding)
     first_diff = List.first(first_patch.diffs)
 
-    first_patch =
-      if is_nil(first_diff) || elem(first_diff, 0) != :equal do
-        # Add null_padding equality.
-        # start1 and start2 should be 0.
+    if is_nil(first_diff) || elem(first_diff, 0) != :equal do
+      # Add null_padding equality.
+      # start1 and start2 should be 0.
+      %Patch{
+        first_patch
+        | diffs: [{:equal, null_padding} | first_patch.diffs],
+          start1: first_patch.start1 - padding_length,
+          start2: first_patch.start2 - padding_length,
+          length1: first_patch.length1 + padding_length,
+          length2: first_patch.length2 + padding_length
+      }
+    else
+      {op, text} = first_diff
+      text_length = String.length(text)
+
+      if padding_length > text_length do
+        # Grow first equality.
+        extra_length = padding_length - text_length
+        text = substring(null_padding, text_length) <> text
+        first_diff = {op, text}
+
         %Patch{
           first_patch
-          | diffs: [{:equal, null_padding} | first_patch.diffs],
-            start1: first_patch.start1 - padding_length,
-            start2: first_patch.start2 - padding_length,
-            length1: first_patch.length1 + padding_length,
-            length2: first_patch.length2 + padding_length
+          | diffs: [first_diff | Enum.drop(first_patch.diffs, 1)],
+            start1: first_patch.start1 - extra_length,
+            start2: first_patch.start2 - extra_length,
+            length1: first_patch.length1 + extra_length,
+            length2: first_patch.length2 + extra_length
         }
       else
-        {op, text} = first_diff
-        text_length = String.length(text)
-
-        if padding_length > text_length do
-          # Grow first equality.
-          extra_length = padding_length - text_length
-          text = substring(null_padding, text_length) <> text
-          first_diff = {op, text}
-
-          %Patch{
-            first_patch
-            | diffs: [first_diff | Enum.drop(first_patch.diffs, 1)],
-              start1: first_patch.start1 - extra_length,
-              start2: first_patch.start2 - extra_length,
-              length1: first_patch.length1 + extra_length,
-              length2: first_patch.length2 + extra_length
-          }
-        else
-          first_patch
-        end
+        first_patch
       end
+    end
+  end
 
-    # Add some padding on end of last diff.
-    {last_patch, last_is_first} =
-      if is_nil(last_patch) do
-        {first_patch, true}
-      else
-        {last_patch, false}
-      end
-
+  # Add some padding on end of last diff.
+  defp pad_last_patch(last_patch, null_padding) do
+    padding_length = String.length(null_padding)
     last_diff = List.last(last_patch.diffs)
 
-    last_patch =
-      if is_nil(last_diff) || elem(last_diff, 0) != :equal do
-        # Add null_padding equality.
+    if is_nil(last_diff) || elem(last_diff, 0) != :equal do
+      # Add null_padding equality.
+      %Patch{
+        last_patch
+        | diffs: last_patch.diffs ++ [{:equal, null_padding}],
+          length1: last_patch.length1 + padding_length,
+          length2: last_patch.length2 + padding_length
+      }
+    else
+      {op, text} = last_diff
+      text_length = String.length(text)
+
+      if padding_length > text_length do
+        # Grow last equality.
+        extra_length = padding_length - text_length
+        last_diff = {op, text <> substring(null_padding, 0, extra_length)}
+
         %Patch{
           last_patch
-          | diffs: last_patch.diffs ++ [{:equal, null_padding}],
-            length1: last_patch.length1 + padding_length,
-            length2: last_patch.length2 + padding_length
+          | diffs: Enum.drop(last_patch.diffs, -1) ++ [last_diff],
+            length1: last_patch.length1 + extra_length,
+            length2: last_patch.length2 + extra_length
         }
       else
-        {op, text} = last_diff
-        text_length = String.length(text)
-
-        if padding_length > text_length do
-          # Grow last equality.
-          extra_length = padding_length - text_length
-          last_diff = {op, text <> substring(null_padding, 0, extra_length)}
-
-          %Patch{
-            last_patch
-            | diffs: Enum.drop(last_patch.diffs, -1) ++ [last_diff],
-              length1: last_patch.length1 + extra_length,
-              length2: last_patch.length2 + extra_length
-          }
-        else
-          last_patch
-        end
+        last_patch
       end
-
-    if last_is_first do
-      {[last_patch], null_padding}
-    else
-      {[first_patch | mid_patches] ++ [last_patch], null_padding}
     end
   end
 
@@ -678,8 +741,6 @@ defmodule Dmp.Patch do
     end
   end
 
-  # Verified tail-recursive
-  @spec split_max_loop(Cursor.t(), non_neg_integer(), non_neg_integer()) :: patchlist()
   defp split_max_loop(%Cursor{current: nil} = patches, _patch_margin, _patch_size),
     do: Cursor.to_list(patches)
 
@@ -705,7 +766,9 @@ defmodule Dmp.Patch do
     split_max_loop(patches, patch_margin, patch_size)
   end
 
-  # Verified tail-recursive
+  defp create_subpatches(patches, [], _start1, _start2, _precontext, _patch_margin, _patch_size),
+    do: patches
+
   defp create_subpatches(
          patches,
          bigpatch_diffs,
@@ -715,100 +778,117 @@ defmodule Dmp.Patch do
          patch_margin,
          patch_size
        ) do
-    if bigpatch_diffs == [] do
-      patches
-    else
-      precontext_length = String.length(precontext)
-      # Create one of several smaller patches.
-      patch = %Patch{start1: start1 - precontext_length, start2: start2 - precontext_length}
+    precontext_length = String.length(precontext)
+    # Create one of several smaller patches.
+    patch = %Patch{start1: start1 - precontext_length, start2: start2 - precontext_length}
 
-      patch =
-        if precontext_length != 0 do
-          %Patch{
-            patch
-            | diffs: [{:equal, precontext}],
-              length1: precontext_length,
-              length2: precontext_length
-          }
-        else
+    patch =
+      if precontext_length != 0 do
+        %Patch{
           patch
-        end
+          | diffs: [{:equal, precontext}],
+            length1: precontext_length,
+            length2: precontext_length
+        }
+      else
+        patch
+      end
 
-      {bigpatch_diffs, patch, start1, start2, empty} =
-        subpatch_loop(
-          bigpatch_diffs,
-          patch,
-          start1,
-          start2,
-          true,
-          patch_margin,
-          patch_size
-        )
-
-      # Compute the head context for the next patch.
-      precontext = Diff.text2(patch.diffs)
-      precontext = substring(precontext, max(0, String.length(precontext) - patch_margin))
-
-      # Append the end context for this patch.
-      text1 = Diff.text1(bigpatch_diffs)
-
-      postcontext =
-        if String.length(text1) > patch_margin do
-          substring(text1, 0, patch_margin)
-        else
-          text1
-        end
-
-      patch =
-        if postcontext != "" do
-          postcontext_length = String.length(postcontext)
-          last_diff = List.last(patch.diffs)
-
-          patch_diffs =
-            if !is_nil(last_diff) && elem(last_diff, 0) == :equal do
-              Enum.drop(patch.diffs, -1) ++ [{:equal, elem(last_diff, 1) <> postcontext}]
-            else
-              patch.diffs ++ [{:equal, postcontext}]
-            end
-
-          %Patch{
-            patch
-            | diffs: patch_diffs,
-              length1: patch.length1 + postcontext_length,
-              length2: patch.length2 + postcontext_length
-          }
-        else
-          patch
-        end
-
-      patches =
-        if !empty do
-          patches =
-            patches
-            |> Cursor.move_forward()
-            |> Cursor.insert_before([patch])
-
-          patches
-        else
-          patches
-        end
-
-      # BUG - should do it again for example 4
-      # Call again, without advancing
-      create_subpatches(
-        patches,
+    {bigpatch_diffs, patch, start1, start2, empty} =
+      subpatch_loop(
         bigpatch_diffs,
+        patch,
         start1,
         start2,
-        precontext,
+        true,
         patch_margin,
         patch_size
       )
-    end
+
+    # Compute the head context for the next patch.
+    precontext = Diff.text2(patch.diffs)
+    precontext = substring(precontext, max(0, String.length(precontext) - patch_margin))
+
+    # Append the end context for this patch.
+    text1 = Diff.text1(bigpatch_diffs)
+
+    postcontext =
+      if String.length(text1) > patch_margin do
+        substring(text1, 0, patch_margin)
+      else
+        text1
+      end
+
+    patch =
+      if postcontext != "" do
+        postcontext_length = String.length(postcontext)
+        last_diff = List.last(patch.diffs)
+
+        patch_diffs =
+          if is_tuple(last_diff) && elem(last_diff, 0) == :equal do
+            Enum.drop(patch.diffs, -1) ++ [{:equal, elem(last_diff, 1) <> postcontext}]
+          else
+            patch.diffs ++ [{:equal, postcontext}]
+          end
+
+        %Patch{
+          patch
+          | diffs: patch_diffs,
+            length1: patch.length1 + postcontext_length,
+            length2: patch.length2 + postcontext_length
+        }
+      else
+        patch
+      end
+
+    patches =
+      if empty do
+        patches
+      else
+        patches
+        |> Cursor.move_forward()
+        |> Cursor.insert_before([patch])
+      end
+
+    # Call again, without advancing
+    create_subpatches(
+      patches,
+      bigpatch_diffs,
+      start1,
+      start2,
+      precontext,
+      patch_margin,
+      patch_size
+    )
+  end
+
+  def subpatch_loop(
+        [],
+        patch,
+        start1,
+        start2,
+        empty,
+        _patch_margin,
+        _patch_size
+      ) do
+    {[], patch, start1, start2, empty}
   end
 
   def subpatch_loop(
         bigpatch_diffs,
+        %Patch{length1: length1} = patch,
+        start1,
+        start2,
+        empty,
+        patch_margin,
+        patch_size
+      )
+      when length1 >= patch_size - patch_margin do
+    {bigpatch_diffs, patch, start1, start2, empty}
+  end
+
+  def subpatch_loop(
+        [first_diff | rest],
         patch,
         start1,
         start2,
@@ -816,76 +896,10 @@ defmodule Dmp.Patch do
         patch_margin,
         patch_size
       ) do
-    if bigpatch_diffs != [] && patch.length1 < patch_size - patch_margin do
-      {diff_type, diff_text} = List.first(bigpatch_diffs)
-      diff_text_length = String.length(diff_text)
-
-      {bigpatch_diffs, patch, start1, start2, empty} =
-        cond do
-          diff_type == :insert ->
-            # Insertions are harmless.
-            [first_diff | rest] = bigpatch_diffs
-
-            patch = %Patch{
-              patch
-              | diffs: patch.diffs ++ [first_diff],
-                length2: patch.length2 + diff_text_length
-            }
-
-            {rest, patch, start1, start2 + diff_text_length, false}
-
-          diff_type == :delete && Enum.count(patch.diffs) == 1 &&
-            List.first(patch.diffs) |> elem(0) == :equal &&
-              diff_text_length > 2 * patch_size ->
-            # This is a large deletion.  Let it pass in one chunk.
-            [_first_diff | rest] = bigpatch_diffs
-
-            patch = %Patch{
-              patch
-              | diffs: patch.diffs ++ [{diff_type, diff_text}],
-                length1: patch.length1 + diff_text_length
-            }
-
-            {rest, patch, start1 + diff_text_length, start2, false}
-
-          true ->
-            # Deletion or equality.  Only take as much as we can stomach.
-            diff_text =
-              substring(
-                diff_text,
-                0,
-                min(diff_text_length, patch_size - patch.length1 - patch_margin)
-              )
-
-            diff_text_length = String.length(diff_text)
-            patch = %Patch{patch | length1: patch.length1 + diff_text_length}
-            start1 = start1 + diff_text_length
-
-            {patch, start2, empty} =
-              if diff_type == :equal do
-                {%Patch{patch | length2: patch.length2 + diff_text_length},
-                 start2 + diff_text_length, empty}
-              else
-                {patch, start2, false}
-              end
-
-            [{first_op, first_text} | rest] = bigpatch_diffs
-
-            patch = %Patch{patch | diffs: patch.diffs ++ [{diff_type, diff_text}]}
-
-            bigpatch_diffs =
-              if diff_text == first_text do
-                rest
-              else
-                first_text = substring(first_text, diff_text_length)
-                [{first_op, first_text} | rest]
-              end
-
-            {bigpatch_diffs, patch, start1, start2, empty}
-        end
-
-      subpatch_loop(
-        bigpatch_diffs,
+    {bigpatch_diffs, patch, start1, start2, empty} =
+      add_diff_to_subpatch(
+        first_diff,
+        rest,
         patch,
         start1,
         start2,
@@ -893,9 +907,142 @@ defmodule Dmp.Patch do
         patch_margin,
         patch_size
       )
+
+    subpatch_loop(
+      bigpatch_diffs,
+      patch,
+      start1,
+      start2,
+      empty,
+      patch_margin,
+      patch_size
+    )
+  end
+
+  def add_diff_to_subpatch(
+        {:insert, first_text} = first_diff,
+        rest,
+        patch,
+        start1,
+        start2,
+        _empty,
+        _patch_margin,
+        _patch_size
+      ) do
+    # Insertions are harmless.
+    text_length = String.length(first_text)
+
+    patch = %Patch{
+      patch
+      | diffs: patch.diffs ++ [first_diff],
+        length2: patch.length2 + text_length
+    }
+
+    {rest, patch, start1, start2 + text_length, false}
+  end
+
+  # If the patch is just one equality
+  # and we have a large deletion...
+  def add_diff_to_subpatch(
+        {:delete, first_text} = first_diff,
+        rest,
+        %Patch{diffs: [{:equal, _}]} = patch,
+        start1,
+        start2,
+        empty,
+        patch_margin,
+        patch_size
+      ) do
+    text_length = String.length(first_text)
+
+    if text_length > 2 * patch_size do
+      # This is a large deletion.  Let it pass in one chunk.
+      patch = %Patch{
+        patch
+        | diffs: patch.diffs ++ [first_diff],
+          length1: patch.length1 + text_length
+      }
+
+      {rest, patch, start1 + text_length, start2, false}
     else
-      {bigpatch_diffs, patch, start1, start2, empty}
+      # Handle same as :equal
+      add_other_diff_to_subpatch(
+        first_diff,
+        rest,
+        patch,
+        start1,
+        start2,
+        empty,
+        patch_margin,
+        patch_size
+      )
     end
+  end
+
+  # Equality, or deletion when patch is not a single equality
+  def add_diff_to_subpatch(
+        first_diff,
+        rest,
+        patch,
+        start1,
+        start2,
+        empty,
+        patch_margin,
+        patch_size
+      ) do
+    add_other_diff_to_subpatch(
+      first_diff,
+      rest,
+      patch,
+      start1,
+      start2,
+      empty,
+      patch_margin,
+      patch_size
+    )
+  end
+
+  # Equality, or small deletion
+  def add_other_diff_to_subpatch(
+        {first_op, first_text},
+        rest,
+        patch,
+        start1,
+        start2,
+        empty,
+        patch_margin,
+        patch_size
+      ) do
+    # Deletion or equality.  Only take as much as we can stomach.
+    diff_text =
+      substring(
+        first_text,
+        0,
+        patch_size - patch.length1 - patch_margin
+      )
+
+    text_length = String.length(diff_text)
+    patch = %Patch{patch | length1: patch.length1 + text_length}
+    start1 = start1 + text_length
+
+    {patch, start2, empty} =
+      if first_op == :equal do
+        {%Patch{patch | length2: patch.length2 + text_length}, start2 + text_length, empty}
+      else
+        {patch, start2, false}
+      end
+
+    patch = %Patch{patch | diffs: patch.diffs ++ [{first_op, diff_text}]}
+
+    bigpatch_diffs =
+      if diff_text == first_text do
+        rest
+      else
+        first_text = substring(first_text, text_length)
+        [{first_op, first_text} | rest]
+      end
+
+    {bigpatch_diffs, patch, start1, start2, empty}
   end
 
   @doc """
@@ -939,47 +1086,11 @@ defmodule Dmp.Patch do
             raise ArgumentError, "Invalid patch header: #{line}"
 
           groups ->
-            start1 =
-              case Integer.parse(Enum.at(groups, 1)) do
-                {start1, ""} -> start1
-                _ -> raise ArgumentError, "Invalid patch header (start1): #{line}"
-              end
-
             {start1, length1} =
-              case Enum.at(groups, 2) do
-                "" ->
-                  {start1 - 1, 1}
-
-                "0" ->
-                  {start1, 0}
-
-                n ->
-                  case Integer.parse(n) do
-                    {length1, ""} -> {start1 - 1, length1}
-                    _ -> raise ArgumentError, "Invalid patch header (length1): #{line}"
-                  end
-              end
-
-            start2 =
-              case Integer.parse(Enum.at(groups, 3)) do
-                {start2, ""} -> start2
-                _ -> raise ArgumentError, "Invalid patch header (start2): #{line}"
-              end
+              parse_start_length(Enum.at(groups, 1), Enum.at(groups, 2), line, "1")
 
             {start2, length2} =
-              case Enum.at(groups, 4) do
-                "" ->
-                  {start2 - 1, 1}
-
-                "0" ->
-                  {start2, 0}
-
-                n ->
-                  case Integer.parse(n) do
-                    {length2, ""} -> {start2 - 1, length2}
-                    _ -> raise ArgumentError, "Invalid patch header (length2): #{line}"
-                  end
-              end
+              parse_start_length(Enum.at(groups, 3), Enum.at(groups, 4), line, "2")
 
             {lines, diffs} =
               lines
@@ -1003,49 +1114,71 @@ defmodule Dmp.Patch do
     end
   end
 
-  @spec parse_patch_body(Cursor.t(), Diff.difflist()) :: {Cursor.t(), Diff.difflist()}
-  defp parse_patch_body(%Cursor{current: line} = lines, diffs) do
-    case line do
-      nil ->
-        {lines, diffs}
+  defp parse_start_length(s1, s2, line, suffix) do
+    start =
+      case Integer.parse(s1) do
+        {start, ""} -> start
+        _ -> raise ArgumentError, "Invalid patch header (start#{suffix}): #{line}"
+      end
 
+    case s2 do
       "" ->
-        Cursor.move_forward(lines)
-        |> parse_patch_body(diffs)
+        {start - 1, 1}
+
+      "0" ->
+        {start, 0}
 
       _ ->
-        {sign, line1} = String.split_at(line, 1)
-        # Decode would change all "+" to " "
-        line1 = line1 |> String.replace("+", "%2B") |> URI.decode()
-
-        diff =
-          case sign do
-            "-" ->
-              # Deletion.
-              {:delete, line1}
-
-            "+" ->
-              # Insertion.
-              {:insert, line1}
-
-            " " ->
-              # Minor equality.
-              {:equal, line1}
-
-            "@" ->
-              nil
-
-            _ ->
-              # WTF?
-              raise ArgumentError, "Invalid patch mode '#{sign}' in: #{line}"
-          end
-
-        if is_nil(diff) do
-          {lines, diffs}
-        else
-          Cursor.move_forward(lines)
-          |> parse_patch_body([diff | diffs])
+        case Integer.parse(s2) do
+          {length, ""} -> {start - 1, length}
+          _ -> raise ArgumentError, "Invalid patch header (length#{suffix}): #{line}"
         end
+    end
+  end
+
+  @spec parse_patch_body(Cursor.t(), Diff.difflist()) :: {Cursor.t(), Diff.difflist()}
+  defp parse_patch_body(%Cursor{current: nil} = lines, diffs), do: {lines, diffs}
+
+  defp parse_patch_body(%Cursor{current: ""} = lines, diffs) do
+    Cursor.move_forward(lines)
+    |> parse_patch_body(diffs)
+  end
+
+  defp parse_patch_body(%Cursor{current: line} = lines, diffs) do
+    diff = parse_patch_diff(line)
+
+    if is_nil(diff) do
+      {lines, diffs}
+    else
+      Cursor.move_forward(lines)
+      |> parse_patch_body([diff | diffs])
+    end
+  end
+
+  defp parse_patch_diff(line) do
+    {sign, text} = String.split_at(line, 1)
+    # Decode would change all "+" to " "
+    text = text |> String.replace("+", "%2B") |> URI.decode()
+
+    case sign do
+      "-" ->
+        # Deletion.
+        {:delete, text}
+
+      "+" ->
+        # Insertion.
+        {:insert, text}
+
+      " " ->
+        # Minor equality.
+        {:equal, text}
+
+      "@" ->
+        nil
+
+      _ ->
+        # WTF?
+        raise ArgumentError, "Invalid patch mode '#{sign}' in: #{line}"
     end
   end
 end
