@@ -15,10 +15,10 @@ defmodule Dmp.Match do
   @doc """
   Locate the best instance of `pattern` in `text` near `loc`.
 
-  `text` - The text to search.
-  `pattern` - The pattern to search for.
-  `loc` - The location to search around.
-  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
+    * `text` - The text to search.
+    * `pattern` - The pattern to search for.
+    * `loc` - The location to search around.
+    * `opts` - An `Options` struct, or `nil` to use default options.
 
   Returns -1 if no match found.
   """
@@ -53,11 +53,13 @@ defmodule Dmp.Match do
   @doc """
   Locate the best instance of `pattern` in `text` near `loc` using the Bitap algorithm.
 
-  `text` - The text to search.
-  `pattern` - The pattern to search for.
-  `loc` - The location to search around.
-  `match_threshold` - At what point is no match declared (0.0 = perfection, 1.0 = very loose, default = 0.5).
-  `match_distance` - How far to search for a match (0 = exact location, 1000+ = broad match, default = 1000).
+    * `text` - The text to search.
+    * `pattern` - The pattern to search for.
+    * `loc` - The location to search around.
+    * `match_threshold` - At what point is no match declared
+      (0.0 = perfection, 1.0 = very loose, default = 0.5).
+    * `match_distance` - How far to search for a match (0 = exact location,
+      1000+ = broad match, default = 1000).
 
   Returns best match index or -1.
   """
@@ -95,11 +97,12 @@ defmodule Dmp.Match do
 
     # Initialise the bit arrays.
     matchmask = 1 <<< (pattern_length - 1)
+    acc_1 = {-1, score_threshold, %{}, text_length + pattern_length}
 
     {best_loc, _score_threshold, _rd, _bin_max} =
       Enum.reduce_while(
         0..(pattern_length - 1),
-        {-1, score_threshold, %{}, text_length + pattern_length},
+        acc_1,
         fn d, {best_loc, score_threshold, last_rd, bin_max} ->
           # Scan for the best match; each iteration allows for one more error.
           # Run a binary search to determine how far from 'loc' we can stray at
@@ -108,7 +111,7 @@ defmodule Dmp.Match do
 
           bin_max =
             bin_mid =
-            bin_score(
+            get_bin_mid(
               0,
               bin_max,
               bin_max,
@@ -122,13 +125,11 @@ defmodule Dmp.Match do
           finish = min(loc + bin_mid, text_length) + pattern_length
           start = max(1, loc - bin_mid + 1)
           rd = %{(finish + 1) => (1 <<< d) - 1}
+          acc_2 = {best_loc, score_threshold, rd, start}
 
           {best_loc, score_threshold, rd, _start} =
-            Enum.reduce_while(finish..0//-1, {best_loc, score_threshold, rd, start}, fn j,
-                                                                                        {best_loc,
-                                                                                         score_threshold,
-                                                                                         rd,
-                                                                                         start} ->
+            Enum.reduce_while(finish..0//-1, acc_2, fn j,
+                                                       {best_loc, score_threshold, rd, start} ->
               if j < start do
                 {:halt, {best_loc, score_threshold, rd, start}}
               else
@@ -203,7 +204,7 @@ defmodule Dmp.Match do
     end
   end
 
-  @spec bin_score(
+  @spec get_bin_mid(
           non_neg_integer(),
           non_neg_integer(),
           non_neg_integer(),
@@ -214,16 +215,16 @@ defmodule Dmp.Match do
           non_neg_integer()
         ) :: non_neg_integer()
   # Verified tail-recursive
-  def bin_score(
-        bin_min,
-        bin_mid,
-        bin_max,
-        d,
-        loc,
-        pattern_length,
-        score_threshold,
-        match_distance
-      ) do
+  defp get_bin_mid(
+         bin_min,
+         bin_mid,
+         bin_max,
+         d,
+         loc,
+         pattern_length,
+         score_threshold,
+         match_distance
+       ) do
     if bin_min >= bin_mid do
       # Done
       bin_mid
@@ -238,7 +239,7 @@ defmodule Dmp.Match do
 
       bin_mid = div(bin_max - bin_min, 2) + bin_min
 
-      bin_score(
+      get_bin_mid(
         bin_min,
         bin_mid,
         bin_max,

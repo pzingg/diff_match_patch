@@ -72,7 +72,7 @@ defmodule Dmp.Options do
         patch_margin: 4}
 
     iex> Options.valid_options!(%Options{match_max_bits: -1})
-    ** (ArgumentError) invalid Options value(s)
+    ** (ArgumentError) Invalid Options value(s)
 
   """
   @spec valid_options!(nil | t()) :: t()
@@ -101,7 +101,7 @@ defmodule Dmp.Options do
     if valid do
       opts
     else
-      raise ArgumentError, "invalid Options value(s)"
+      raise ArgumentError, "Invalid Options value(s)"
     end
   end
 end

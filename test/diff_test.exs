@@ -481,7 +481,7 @@ defmodule DiffTest do
     diffs = [{:equal, "a\n"}, {:delete, "<B>b</B>"}, {:insert, "c&d"}]
 
     assert "<span>a&para;<br></span><del style=\"background:#ffe6e6;\">&lt;B&gt;b&lt;/B&gt;</del><ins style=\"background:#e6ffe6;\">c&amp;d</ins>" ==
-             Diff.to_html(diffs)
+             Diff.pretty_html(diffs)
   end
 
   test "compute the source and destination texts" do
@@ -522,21 +522,21 @@ defmodule DiffTest do
       assert diffs == Diff.from_delta(text1, delta)
 
       # Generates error (19 != 20).
-      assert_raise RuntimeError, "Delta length (19) smaller than source text length (20)", fn ->
+      assert_raise ArgumentError, "Delta length (19) smaller than source text length (20)", fn ->
         Diff.from_delta(text1 <> "x", delta)
       end
 
       # Generates error (19 != 18).
       text1 = substring(text1, 1)
 
-      assert_raise RuntimeError, "Delta length (19) larger than source text length (18)", fn ->
+      assert_raise ArgumentError, "Delta length (19) larger than source text length (18)", fn ->
         Diff.from_delta(text1, delta)
       end
     end
 
     # String "+%c3xy" passes in Elixir
     # test "invalid Unicode" do
-    #  assert_raise RuntimeError, "", fn -> Diff.from_delta("", "+%c3xy") end
+    #  assert_raise ArgumentError, "", fn -> Diff.from_delta("", "+%c3xy") end
     # end
 
     test "special characters" do

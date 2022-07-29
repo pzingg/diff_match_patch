@@ -7,14 +7,10 @@ defmodule Dmp.Diff do
 
   alias Dmp.{Cursor, Options}
 
-  @typedoc """
-  A diff's operation type.
-  """
+  @typedoc "A diff's operation type."
   @type op() :: :delete | :insert | :equal
 
-  @typedoc """
-  The diff tuple, consisting of two elements: the operation and the associated text.
-  """
+  @typedoc "The diff tuple, consisting of two elements: the operation and the associated text."
   @type t() :: {op(), String.t()}
 
   @typedoc """
@@ -51,14 +47,14 @@ defmodule Dmp.Diff do
   @doc """
   Find the differences between two texts.
 
-  Most of the time `check_lines` is wanted, so it defaults to `true`.
-
     * `text1` - Old string to be diffed.
     * `text2` - New string to be diffed.
     * `check_lines` - Speedup flag.  If `false`, then don't run a
-      line-level diff first to identify the changed areas.
-    * If `true`, then run a faster slightly less optimal diff.
-    * `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
+      line-level diff first to identify the changed areas. If `true`,
+      then run a faster slightly less optimal diff.
+    * `opts` - An `Options` struct, or `nil` to use default options.
+
+  Most of the time `check_lines` is wanted, so it defaults to `true`.
 
   Returns a difflist.
   """
@@ -125,15 +121,16 @@ defmodule Dmp.Diff do
   end
 
   @doc """
-  Find the differences between two texts.  Assumes that the texts do not
-  have any common prefix or suffix.
+  Find the differences between two texts.
 
-  `text1` - Old string to be diffed.
-  `text2` -  New string to be diffed.
-  `check_lines` - Speedup flag.  If false, then don't run a
-    line-level diff first to identify the changed areas.
-    If true, then run a faster slightly less optimal diff.
-  `deadline` -  Unix timestamp (in milliseconds) when the diff should be complete by.
+    * `text1` - Old string to be diffed.
+    * `text2` -  New string to be diffed.
+    * `check_lines` - Speedup flag.  If false, then don't run a
+      line-level diff first to identify the changed areas.
+      If true, then run a faster slightly less optimal diff.
+    * `deadline` - Unix timestamp in milliseconds when the diff should be complete by.
+
+  Assumes that the texts do not have any common prefix or suffix.
 
   Returns a difflist.
   """
@@ -197,11 +194,13 @@ defmodule Dmp.Diff do
 
   @doc """
   Do a quick line-level diff on both strings, then rediff the parts for
-  greater accuracy. This speedup can produce non-minimal diffs.
+  greater accuracy.
 
-  `text1` - Old string to be diffed.
-  `text2` - New string to be diffed.
-  `deadline` -  Unix timestamp (in milliseconds) when the diff should be complete by.
+    * `text1` - Old string to be diffed.
+    * `text2` - New string to be diffed.
+    * `deadline` - Unix timestamp (in milliseconds) when the diff should be complete by.
+
+  This speedup can produce non-minimal diffs.
 
   Returns a difflist.
   """
@@ -279,8 +278,9 @@ defmodule Dmp.Diff do
   end
 
   @doc """
-  Find the 'middle snake' of a diff, split the problem in two
+  Find the "middle snake" of a diff, split the problem in two
   and return the recursively constructed diff.
+
   See Myers 1986 paper: [An O(ND) Difference Algorithm and Its Variations.](http://www.xmailserver.org/diff2.pdf)
 
     * `text1` - Old string to be diffed.
@@ -608,16 +608,18 @@ defmodule Dmp.Diff do
     end
   end
 
-  # Given the location of the 'middle snake', split the diff in two parts
-  # and recurse.
-  #
-  # `text1` - Old string to be diffed.
-  # `text2` - New string to be diffed.
-  # `x` - Index of split point in text1.
-  # `y` - Index of split point in text2.
-  # `deadline` - Unix timestamp (in milliseconds) at which to bail if not yet complete.
-  #
-  # Returns a difflist.
+  @doc """
+  Given the location of the "middle snake", split the diff in two parts
+  and recurse.
+
+    * `text1` - Old string to be diffed.
+    * `text2` - New string to be diffed.
+    * `x` - Index of split point in text1.
+    * `y` - Index of split point in text2.
+    * `deadline` - Unix timestamp (in milliseconds) at which to bail if not yet complete.
+
+  Returns a difflist.
+  """
   @spec bisect_split(
           String.t(),
           String.t(),
@@ -625,7 +627,7 @@ defmodule Dmp.Diff do
           non_neg_integer(),
           non_neg_integer()
         ) :: difflist()
-  defp bisect_split(text1, text2, x, y, deadline) do
+  def bisect_split(text1, text2, x, y, deadline) do
     {text1a, text1b} = String.split_at(text1, x)
     {text2a, text2b} = String.split_at(text2, y)
 
@@ -637,15 +639,17 @@ defmodule Dmp.Diff do
   end
 
   @doc """
-  Split two texts into a list of strings.  Reduce the texts to a string of
-  hashes where each Unicode character represents one line.
+  Split two texts into a list of strings.
 
-  `text1` - First string.
-  `text2` - Second string.
+  Reduce the texts to a string of hashes where each Unicode character
+  represents one line.
+
+    * `text1` - First string.
+    * `text2` - Second string.
 
   Returns a tuple containing the encoded `text1`, the encoded `text2` and
-    the list of unique strings.  The zeroth element of the list of
-    unique strings is intentionally blank.
+  the list of unique strings.  The zeroth element of the list of
+  unique strings is intentionally blank.
   """
   @spec lines_to_chars(String.t(), String.t()) :: {String.t(), String.t(), list(String.t())}
   def lines_to_chars(text1, text2) do
@@ -673,7 +677,7 @@ defmodule Dmp.Diff do
         {line <> "\n", rest}
 
       _ ->
-        raise "pop_line error"
+        raise RuntimeError, "pop_line error"
     end
   end
 
@@ -690,17 +694,17 @@ defmodule Dmp.Diff do
         ) :: munge_line_result()
   # Verified tail-recursive
   # Case 1. Initial text is ""
-  def lines_to_chars_munge("", {h, arr, nil, _}, _max_lines) do
+  defp lines_to_chars_munge("", {h, arr, nil, _}, _max_lines) do
     {h, arr, ""}
   end
 
   # Case 2. No more text, or overflowed max_lines
-  def lines_to_chars_munge("", {h, arr, chars, _}, _max_lines) do
+  defp lines_to_chars_munge("", {h, arr, chars, _}, _max_lines) do
     {h, Enum.reverse(arr), Enum.reverse(chars) |> List.to_string()}
   end
 
   # Case 3. Process one line of text and recurse
-  def lines_to_chars_munge(text, {h, arr, chars, next_val}, max_lines) do
+  defp lines_to_chars_munge(text, {h, arr, chars, next_val}, max_lines) do
     # First time if chars == nil
     {arr, chars, next_val} =
       if is_nil(chars) do
@@ -732,8 +736,8 @@ defmodule Dmp.Diff do
   Rehydrate the text in a diff from a string of line hashes to real lines of
   text.
 
-  `diffs` - a difflist.
-  `line_array` - list of unique strings.
+    * `diffs` - A difflist.
+    * `line_array` - A list of unique strings.
 
   Returns the rehydrated difflist.
   """
@@ -750,14 +754,14 @@ defmodule Dmp.Diff do
   @doc """
   Determine the common prefix of two strings.
 
-  `text1` - First string.
-  `text2` - Second string.
+    * `text1` - First string.
+    * `text2` - Second string.
 
   Returns a tuple `{prefix, rest1, rest2}`, where
 
-  `prefix` - The common prefix.
-  `rest1` - `text1` with the prefix removed.
-  `rest2` - `text2` with the prefix removed.
+    * `prefix` - The common prefix.
+    * `rest1` - `text1` with the prefix removed.
+    * `rest2` - `text2` with the prefix removed.
   """
   @spec common_prefix(String.t(), String.t()) :: {String.t(), String.t(), String.t()}
   def common_prefix(text1, text2) do
@@ -787,14 +791,14 @@ defmodule Dmp.Diff do
   @doc """
   Determine the common suffix of two strings.
 
-  `text1` - First string.
-  `text2` - Second string.
+    * `text1` - First string.
+    * `text2` - Second string.
 
   Returns a tuple `{suffix, rest1, rest2}`, where
 
-  `suffix` - The common suffix.
-  `rest1` - `text1` with the suffix removed.
-  `rest2` - `text2` with the suffix removed.
+    * `suffix` - The common suffix.
+    * `rest1` - `text1` with the suffix removed.
+    * `rest2` - `text2` with the suffix removed.
   """
   @spec common_suffix(String.t(), String.t()) :: {String.t(), String.t(), String.t()}
   def common_suffix(text1, text2) do
@@ -824,8 +828,8 @@ defmodule Dmp.Diff do
   @doc """
   Determine if the suffix of one string is the prefix of another.
 
-  `text1` - First string.
-  `text2` - Second string.
+    * `text1` - First string.
+    * `text2` - Second string.
 
   Returns the number of characters common to the end of the first
   string and the start of the second string.
@@ -896,11 +900,13 @@ defmodule Dmp.Diff do
 
   @doc """
   Do the two texts share a substring which is at least half the length of
-  the longer text? This speedup can produce non-minimal diffs.
+  the longer text?
 
-  `text1` - First string.
-  `text2` - Second string.
-  `deadline` - Unix timestamp (in milliseconds) at which to bail if not yet complete.
+    * `text1` - First string.
+    * `text2` - Second string.
+    * `deadline` - Unix timestamp (in milliseconds) at which to bail if not yet complete.
+
+  This speedup can produce non-minimal diffs.
 
   Returns a `half_match_result` 5-tuple, or `nil` if there was no match.
   Returns `nil` if `deadline` is zero (no time limit specified).
@@ -1029,7 +1035,7 @@ defmodule Dmp.Diff do
     )
   end
 
-  @typedoc "Double-ended queue of equalities."
+  @typedoc "A double-ended queue of equalities."
   @type diffqueue() :: :queue.queue()
 
   defp safe_drop_r(queue, n \\ 1)
@@ -1059,7 +1065,7 @@ defmodule Dmp.Diff do
         }
 
   @doc """
-  Reduce the number of edits by eliminating semantically trivial equalities.
+  Reduce the number of edits in a diff by eliminating semantically trivial equalities.
 
   Returns the updated difflist.
   """
@@ -1251,9 +1257,10 @@ defmodule Dmp.Diff do
   end
 
   @doc """
-  Look for single edits surrounded on both sides by equalities
+  Look for single edits in a diff that are surrounded on both sides by equalities
   which can be shifted sideways to align the edit to a word boundary.
-  e.g: `The c<ins>at c</ins>ame.` -> `The <ins>cat </ins>came.`
+
+  Example: `The c<ins>at c</ins>ame.` becomes `The <ins>cat </ins>came.`
 
   Returns the updated difflist.
   """
@@ -1413,10 +1420,10 @@ defmodule Dmp.Diff do
   @spec cleanup_semantic_score(String.t(), String.t()) :: non_neg_integer()
 
   # Edges are the best.
-  def cleanup_semantic_score("", _two), do: 6
-  def cleanup_semantic_score(_one, ""), do: 6
+  defp cleanup_semantic_score("", _two), do: 6
+  defp cleanup_semantic_score(_one, ""), do: 6
 
-  def cleanup_semantic_score(one, two) do
+  defp cleanup_semantic_score(one, two) do
     char1 = String.last(one)
     char2 = String.first(two)
 
@@ -1467,9 +1474,9 @@ defmodule Dmp.Diff do
         }
 
   @doc """
-  Reduce the number of edits by eliminating operationally trivial equalities.
+  Reduce the number of edits in a diff by eliminating operationally trivial equalities.
 
-  `diff_edit_cost`  Cost of an empty edit operation in terms of edit characters.
+    * `diff_edit_cost`  Cost of an empty edit operation in terms of edit characters.
 
   Returns the updated difflist.
   """
@@ -1505,19 +1512,19 @@ defmodule Dmp.Diff do
   # Verified tail-recursive
   @spec cleanup_efficiency_loop(Cursor.t(), efficiency_acc(), non_neg_integer()) ::
           {difflist(), boolean()}
-  def cleanup_efficiency_loop(
-        %Cursor{current: nil} = diffs,
-        {changes, _equalities, _last_equality, _safe_diff, _pre_ins, _pre_del, _post_ins,
-         _post_del},
-        _diff_edit_cost
-      ),
-      do: {Cursor.to_list(diffs), changes}
+  defp cleanup_efficiency_loop(
+         %Cursor{current: nil} = diffs,
+         {changes, _equalities, _last_equality, _safe_diff, _pre_ins, _pre_del, _post_ins,
+          _post_del},
+         _diff_edit_cost
+       ),
+       do: {Cursor.to_list(diffs), changes}
 
-  def cleanup_efficiency_loop(
-        %Cursor{current: this_diff} = diffs,
-        {changes, equalities, last_equality, safe_diff, pre_ins, pre_del, post_ins, post_del},
-        diff_edit_cost
-      ) do
+  defp cleanup_efficiency_loop(
+         %Cursor{current: this_diff} = diffs,
+         {changes, equalities, last_equality, safe_diff, pre_ins, pre_del, post_ins, post_del},
+         diff_edit_cost
+       ) do
     {op, text} = this_diff
 
     {diffs, acc} =
@@ -1611,7 +1618,8 @@ defmodule Dmp.Diff do
   end
 
   @doc """
-  Reorder and merge like edit sections.  Merge equalities.
+  Reorder and merge like edit sections in a diff, merging equalities.
+
   Any edit section can move as long as it doesn't cross an equality.
 
   Returns the updated difflist.
@@ -1695,7 +1703,7 @@ defmodule Dmp.Diff do
                           {prev_op, prev_text} = undiff(prev_diff)
 
                           if prev_op != :equal do
-                            raise "Previous diff should have been an equality."
+                            raise RuntimeError, "Previous diff should have been an equality."
                           end
 
                           new_prev = {:equal, prev_text <> prefix}
@@ -1870,12 +1878,21 @@ defmodule Dmp.Diff do
 
   @doc """
   Given `loc`, a location in `text1`, compute and return the equivalent location in
-  `text2`. e.g. "The cat" vs "The big cat", 1->1, 5->8.
+  `text2`.
 
-  `diffs` - a difflist.
-  `loc` - Location within `text1`.
+    * `diffs` - a difflist.
+    * `loc` - Location within `text1`.
 
   Returns location within `text2`.
+
+  ## Examples
+
+    iex> Diff.main("The cat", "The big cat") |> x_index(1)
+    1
+
+    iex> Diff.main("The cat", "The big cat") |> x_index(5)
+    8
+
   """
   @spec x_index(difflist(), non_neg_integer()) :: non_neg_integer()
   def x_index(diffs, loc) do
@@ -1924,14 +1941,10 @@ defmodule Dmp.Diff do
   ]
 
   @doc """
-  Convert a Diff list into a pretty HTML report.
-
-  `diffs` - a difflist().
-
-  Returns HTML representation.
+  Generate a pretty HTML report from a difflist.
   """
-  @spec to_html(difflist()) :: String.t()
-  def to_html(diffs) do
+  @spec pretty_html(difflist()) :: String.t()
+  def pretty_html(diffs) do
     Enum.reduce(diffs, "", fn {op, text}, acc ->
       text =
         Enum.reduce(@html_entities, text, fn {from, to}, acc -> String.replace(acc, from, to) end)
@@ -1945,11 +1958,7 @@ defmodule Dmp.Diff do
   end
 
   @doc """
-  Compute and return the source text (all equalities and deletions).
-
-  `diffs` - a difflist.
-
-  Returns the source text.
+  Compute and return the source text of a diff (all equalities and deletions).
   """
   @spec text1(difflist()) :: String.t()
   def text1(diffs) do
@@ -1963,11 +1972,7 @@ defmodule Dmp.Diff do
   end
 
   @doc """
-  Compute and return the destination text (all equalities and insertions).
-
-  `diffs` - a difflist.
-
-  Returns the destination text.
+  Compute and return the destination text of a diff (all equalities and insertions).
   """
   @spec text2(difflist()) :: String.t()
   def text2(diffs) do
@@ -1981,11 +1986,8 @@ defmodule Dmp.Diff do
   end
 
   @doc """
-  Compute the Levenshtein distance; the number of inserted, deleted or
+  Compute the Levenshtein distance of a diff--the number of inserted, deleted or
   substituted characters.
-
-  @param diffs List of Diff objects.
-  @return Number of changes.
   """
   @spec levenshtein(difflist()) :: non_neg_integer()
   def levenshtein(diffs) do
@@ -2010,16 +2012,18 @@ defmodule Dmp.Diff do
   end
 
   @doc """
-  Crush the diff into an encoded string which describes the operations
-  required to transform text1 into text2.
+  Crush a diff into an encoded string which describes the operations
+  required to transform `text1` into `text2`.
 
-  E.g. "=3\t-2\t+ing" -> Keep 3 chars, delete 2 chars, insert "ing".
+  For example, "=3\t-2\t+ing" means keep 3 chars, delete 2 chars, insert "ing".
 
   Operations are tab-separated.  Inserted text is escaped using %xx notation.
 
-  `diffs` - a difflist.
+  ## Examples
 
-  Returns delta text.
+    |> iex [{:equal, "abc"}, {:delete, "de"}, {:insert, "ing"}] |> to_delta()
+    "=3\t-2\t+ing"
+
   """
   @spec to_delta(difflist()) :: String.t()
   def to_delta(diffs) do
@@ -2047,10 +2051,13 @@ defmodule Dmp.Diff do
   Given the original `text1`, and an encoded string which describes the
   operations required to transform `text1` into `text2`, compute the full diff.
 
-  `text1 Source string for the diff.
-  `delta Delta text.
+    * `text1 - Source string for the diff.
+    * `delta - Encoded delta text.
 
-  Returns difflist. or nil if invalid.
+  Returns a difflist.
+
+  Raises an `ArgumentError` if the encoded delta has invalid contents for the
+  given text.
   """
   @spec from_delta(String.t(), String.t()) :: nil | difflist()
   def from_delta(text1, delta) do
@@ -2080,17 +2087,18 @@ defmodule Dmp.Diff do
                   {n, ""} ->
                     cond do
                       n < 0 ->
-                        raise "Negative number in from_delta: #{param}"
+                        raise ArgumentError, "Negative number in from_delta: #{param}"
 
                       pointer + n > text1_length ->
-                        raise "Delta length (#{pointer + n}) larger than source text length (#{text1_length})"
+                        raise ArgumentError,
+                              "Delta length (#{pointer + n}) larger than source text length (#{text1_length})"
 
                       true ->
                         n
                     end
 
                   _ ->
-                    raise "Invalid number in from_delta: #{param}"
+                    raise ArgumentError, "Invalid number in from_delta: #{param}"
                 end
 
               text = substring(text1, pointer, pointer + n)
@@ -2103,13 +2111,14 @@ defmodule Dmp.Diff do
                   {[{:delete, text} | diffs], pointer + n}
 
                 _ ->
-                  raise "Invalid diff operation in diff_fromDelta: #{op}"
+                  raise ArgumentError, "Invalid diff operation in diff_fromDelta: #{op}"
               end
           end
       end)
 
     if pointer != text1_length do
-      raise "Delta length (#{pointer}) smaller than source text length (#{text1_length})"
+      raise ArgumentError,
+            "Delta length (#{pointer}) smaller than source text length (#{text1_length})"
     end
 
     Enum.reverse(diffs)

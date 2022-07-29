@@ -119,8 +119,10 @@ defmodule Dmp.StringUtils do
   end
 
   @doc """
-  Returns a new string that is a substring of this string. The substring begins
-  with the character at the specified index and extends to the end of this string.
+  Returns a new string that is a substring of this string.
+
+  The substring begins with the character at the specified index
+  and extends to the end of this string.
 
   ## Examples
 
@@ -134,11 +136,12 @@ defmodule Dmp.StringUtils do
   @spec substring(String.t(), non_neg_integer()) :: String.t()
   def substring(s, begin_index), do: String.slice(s, begin_index..-1)
 
-  # Mimic Java substring
   @doc """
-  Returns a new string that is a substring of this string. The substring begins
-  at the specified `begin_index` and extends to the character at index `end_index - 1`.
-  Thus the length of the substring is `end_index - begin_index`.
+  Returns a new string that is a substring of this string.
+
+  The substring begins at the specified `begin_index` and extends to the
+  character at index `end_index - 1`. Thus the length of the substring
+  is `end_index - begin_index`.
 
   ## Examples
 
@@ -164,7 +167,7 @@ defmodule Dmp.StringUtils do
   ]
 
   @doc """
-  A URI encoding, but with spaces left as is, for use with diffs.
+  A URI encoding, but with spaces and asterisks left as is, for use with diffs.
 
   ## Examples
 
@@ -208,6 +211,7 @@ defmodule Dmp.StringUtils do
 
   @doc """
   Unescape selected chars for compatability with JavaScript's `encodeURI`.
+
   In speed critical applications this could be dropped since the
   receiving application will certainly decode these fine.
   Note that this function is case-sensitive.  Thus "%3f" would not be

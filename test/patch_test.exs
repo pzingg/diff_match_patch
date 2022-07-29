@@ -101,7 +101,7 @@ defmodule PatchTest do
     end
 
     test "generates error" do
-      assert_raise RuntimeError, "Invalid patch header: Bad", fn ->
+      assert_raise ArgumentError, "Invalid patch header: Bad", fn ->
         Patch.from_text("Bad\nPatch\n")
       end
     end

@@ -24,10 +24,16 @@ defmodule Dmp.Patch do
 
   defimpl String.Chars, for: Patch do
     @doc """
-    Emulate GNU diff's format.
-    Header: @@ -382,8 +481,9 @@
+    Emulate GNU diff's format:
+
+    ```
+    @@ -382,8 +481,9 @@
+    +change
+     same
+
+    ```
+
     Indices are printed as 1-based, not 0-based.
-    Returns the GNU diff string.
     """
     def to_string(%Patch{
           diffs: diffs,
@@ -87,12 +93,12 @@ defmodule Dmp.Patch do
   Increase the context until it is unique,
   but don't let the pattern expand beyond match_max_bits.
 
-  `patch` - The patch to grow.
-  `text` - Source text.
-  `patch_margin` - Chunk size for context length.
-  `match_max_bits` - The number of bits in an integer (default is expected 32).
+    * `patch` - The `Patch` to grow.
+    * `text` - Source text.
+    * `patch_margin` - Chunk size for context length.
+    * `match_max_bits` - The number of bits in an integer (default is expected 32).
 
-  Returns updated Patch.
+  Returns the updated `Patch`.
   """
   @spec add_context(t(), String.t(), non_neg_integer(), non_neg_integer()) :: String.t()
   def add_context(patch, text, patch_margin, match_max_bits \\ 32)
@@ -172,8 +178,8 @@ defmodule Dmp.Patch do
   Compute a list of patches to turn `text1` into `text2`. `text1` will be derived
   from the provided diffs.
 
-  `diffs` - A difflist from `text1` to `text2`.
-  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
+    * `diffs` - A difflist from `text1` to `text2`.
+    * `opts` - An `Options` struct, or `nil` to use default options.
 
   Returns a patchlist.
   """
@@ -189,10 +195,10 @@ defmodule Dmp.Patch do
   Compute a list of patches to turn `text1` into `text2`. `text2` is ignored.
   `diffs` are the delta between text1 and text2.
 
-  `text1` - Old text.
-  `text2` - Ignored.
-  `diffs` - A difflist from `text1` to `text2`.
-  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
+    * `text1` - Old text.
+    * `text2` - Ignored.
+    * `diffs` - A difflist from `text1` to `text2`.
+    * `opts` - An `Options` struct, or `nil` to use default options.
 
   Returns a patchlist.
   """
@@ -206,10 +212,9 @@ defmodule Dmp.Patch do
 
   The second argument `b` has two cases:
 
-  If `b` is a String `text2`, a difflist that turns `text1` into `text2` will be computed.
-  If `b` is a difflist, it is the delta between `text1` and the target `text2`.
-
-  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
+    * If `b` is a String `text2`, a difflist that turns `text1` into `text2` will be computed.
+    * If `b` is a difflist, it is the delta between `text1` and the target `text2`.
+    * `opts` - An `Options` struct, or `nil` to use default options.
 
   Returns a patchlist.
   """
@@ -260,26 +265,26 @@ defmodule Dmp.Patch do
   end
 
   # Verified tail-recursive
-  def make_loop(
-        %Cursor{current: nil},
-        {patches, patch, prepatch_text, _postpatch_text, _char_count1, _char_count2},
-        _patch_margin,
-        _match_max_bits
-      ) do
+  defp make_loop(
+         %Cursor{current: nil},
+         {patches, patch, prepatch_text, _postpatch_text, _char_count1, _char_count2},
+         _patch_margin,
+         _match_max_bits
+       ) do
     {patches, patch, prepatch_text}
   end
 
-  # Start with text1 (prepatch_text) and apply the diffs until we arrive at
-  # text2 (postpatch_text). We recreate the patches one by one to determine
-  # context info.
-  # `char_count1` Number of characters into the text1 string.
-  # `char_count2` Number of characters into the text2 string.
-  def make_loop(
-        %Cursor{current: {op, text} = diff} = diffs,
-        {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2},
-        patch_margin,
-        match_max_bits
-      ) do
+  defp make_loop(
+         %Cursor{current: {op, text} = diff} = diffs,
+         {patches, patch, prepatch_text, postpatch_text, char_count1, char_count2},
+         patch_margin,
+         match_max_bits
+       ) do
+    # Start with text1 (prepatch_text) and apply the diffs until we arrive at
+    # text2 (postpatch_text). We recreate the patches one by one to determine
+    # context info.
+    # `char_count1` Number of characters into the text1 string.
+    # `char_count2` Number of characters into the text2 string.
     patch =
       if patch.diffs == [] && op != :equal do
         # A new patch starts here.
@@ -372,12 +377,13 @@ defmodule Dmp.Patch do
   Merge a set of patches onto the text.  Return a patched text, as well
   as an array of true/false values indicating which patches were applied.
 
-  `patches` - a patchlist.
-  `text` - Old text.
-  `opts` - A `DiffMatchPatch.Options` struct, or `nil` to use default options.
+    * `patches` - A patchlist.
+    * `text` - Old text.
+    * `opts` - An `Options` struct, or `nil` to use default options.
 
-  Returns two element Object array, containing the new text and an array of
-  boolean values.
+  Returns a tuple with two elements: the new text, and a list of
+  boolean values. Each boolean corresponds to a patch in the patchlist,
+  and is `true` if a match was found for the corresponding patch.
   """
   @spec apply(patchlist(), String.t(), nil | options()) :: {String.t(), list(boolean())}
   def apply([], text), do: {text, []}
@@ -478,7 +484,6 @@ defmodule Dmp.Patch do
           if text1_length > match_max_bits &&
                lev / text1_length > opts.patch_delete_threshold do
             # The end points match, but the content is unacceptably bad.
-
             {false, text}
           else
             diffs = Diff.cleanup_semantic_lossless(diffs)
@@ -527,8 +532,8 @@ defmodule Dmp.Patch do
   Add some padding on text start and end so that edges can match something.
   Intended to be called only from within `Patch.apply`.
 
-  `patches` - a patchlist..
-  `patch_margin` - Chunk size for context length.
+    * `patches` - A patchlist..
+    * `patch_margin` - Chunk size for context length.
 
   Returns a tuple of the padded patchlist and the padding string added to each side.
   """
@@ -649,11 +654,14 @@ defmodule Dmp.Patch do
   @doc """
   Look through the patches and break up any which are longer than the
   maximum limit of the match algorithm.
+
   Intended to be called only from within `Patch.apply`.
 
-  `patches` - a patchlist.
-  `patch_margin` - Chunk size for context length.
-  `match_max_bits` - The number of bits in an int (default 32).
+    * `patches` - A patchlist.
+    * `patch_margin` - Chunk size for context length.
+    * `match_max_bits` - The number of bits in an int (default 32).
+
+  Returns the updated patchlist.
   """
   @spec split_max(patchlist(), non_neg_integer(), non_neg_integer()) :: patchlist()
   def split_max(patches, patch_margin, match_max_bits \\ 32) do
@@ -887,26 +895,19 @@ defmodule Dmp.Patch do
   end
 
   @doc """
-  Take a list of patches and return a textual representation.
-
-  `patches` - List of Patch objects.
-
-  Returns text representation of patches.
+  Return the textual representation of a patchlist.
   """
   def to_text(patches) do
     Enum.reduce(patches, "", fn patch, acc -> acc <> to_string(patch) end)
   end
 
+  @header_regex ~r/^@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@$/
+
   @doc """
-  Parse a textual representation of patches and return a List of Patch
-  objects.
+  Parse a textual representation of patches and return a patchlist.
 
-  `textline` - Text representation of patches.
-
-  Returns List of Patch objects.
+  Raises an `ArgumentError` if the text has invalid contents.
   """
-  @patch_header ~r/^@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@$/
-
   @spec from_text(String.t()) :: patchlist()
   def from_text(""), do: []
 
@@ -919,7 +920,7 @@ defmodule Dmp.Patch do
   end
 
   @spec parse_patch_header(Cursor.t(), patchlist()) :: patchlist()
-  def parse_patch_header(%Cursor{current: line} = lines, patches) do
+  defp parse_patch_header(%Cursor{current: line} = lines, patches) do
     case line do
       nil ->
         patches
@@ -929,15 +930,15 @@ defmodule Dmp.Patch do
         |> parse_patch_header(patches)
 
       _ ->
-        case Regex.run(@patch_header, line) do
+        case Regex.run(@header_regex, line) do
           nil ->
-            raise "Invalid patch header: #{line}"
+            raise ArgumentError, "Invalid patch header: #{line}"
 
           groups ->
             start1 =
               case Integer.parse(Enum.at(groups, 1)) do
                 {start1, ""} -> start1
-                _ -> raise "Invalid patch header (start1): #{line}"
+                _ -> raise ArgumentError, "Invalid patch header (start1): #{line}"
               end
 
             {start1, length1} =
@@ -951,14 +952,14 @@ defmodule Dmp.Patch do
                 n ->
                   case Integer.parse(n) do
                     {length1, ""} -> {start1 - 1, length1}
-                    _ -> raise "Invalid patch header (length1): #{line}"
+                    _ -> raise ArgumentError, "Invalid patch header (length1): #{line}"
                   end
               end
 
             start2 =
               case Integer.parse(Enum.at(groups, 3)) do
                 {start2, ""} -> start2
-                _ -> raise "Invalid patch header (start2): #{line}"
+                _ -> raise ArgumentError, "Invalid patch header (start2): #{line}"
               end
 
             {start2, length2} =
@@ -972,7 +973,7 @@ defmodule Dmp.Patch do
                 n ->
                   case Integer.parse(n) do
                     {length2, ""} -> {start2 - 1, length2}
-                    _ -> raise "Invalid patch header (length2): #{line}"
+                    _ -> raise ArgumentError, "Invalid patch header (length2): #{line}"
                   end
               end
 
@@ -999,7 +1000,7 @@ defmodule Dmp.Patch do
   end
 
   @spec parse_patch_body(Cursor.t(), Diff.difflist()) :: {Cursor.t(), Diff.difflist()}
-  def parse_patch_body(%Cursor{current: line} = lines, diffs) do
+  defp parse_patch_body(%Cursor{current: line} = lines, diffs) do
     case line do
       nil ->
         {lines, diffs}
@@ -1032,7 +1033,7 @@ defmodule Dmp.Patch do
 
             _ ->
               # WTF?
-              raise "Invalid patch mode '#{sign}' in: #{line}"
+              raise ArgumentError, "Invalid patch mode '#{sign}' in: #{line}"
           end
 
         if is_nil(diff) do
