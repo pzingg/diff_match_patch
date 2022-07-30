@@ -296,11 +296,11 @@ defmodule Dmp.Match do
   @doc """
   Compute and return the score for a match with e errors and x location.
 
-  `e` - Number of errors in match.
-  `x` - Location of match.
-  `loc` - Expected location of match.
-  `pattern_length` - Length of pattern being sought.
-  `match_distance` - How far to search for a match (0 = exact location, 1000+ = broad match).
+    * `e` - Number of errors in match.
+    * `x` - Location of match.
+    * `loc` - Expected location of match.
+    * `pattern_length` - Length of pattern being sought.
+    * `match_distance` - How far to search for a match (0 = exact location, 1000+ = broad match).
 
   Returns overall score for match (0.0 = good, 1.0 = bad).
   """

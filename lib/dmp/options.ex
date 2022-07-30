@@ -41,15 +41,15 @@ defmodule Dmp.Options do
 
   ## Examples
 
-    iex> Options.default()
-    %Options{
-        diff_edit_cost: 4,
-        diff_timeout: 1.0,
-        match_distance: 1000,
-        match_max_bits: 32,
-        match_threshold: 0.5,
-        patch_delete_threshold: 0.5,
-        patch_margin: 4}
+      iex> Options.default()
+      %Options{
+          diff_edit_cost: 4,
+          diff_timeout: 1.0,
+          match_distance: 1000,
+          match_max_bits: 32,
+          match_threshold: 0.5,
+          patch_delete_threshold: 0.5,
+          patch_margin: 4}
 
   """
   def default(), do: %__MODULE__{}
@@ -61,18 +61,18 @@ defmodule Dmp.Options do
 
   ## Examples
 
-    iex> Options.valid_options!(nil)
-    %Options{
-        diff_edit_cost: 4,
-        diff_timeout: 1.0,
-        match_distance: 1000,
-        match_max_bits: 32,
-        match_threshold: 0.5,
-        patch_delete_threshold: 0.5,
-        patch_margin: 4}
+      iex> Options.valid_options!(nil)
+      %Options{
+          diff_edit_cost: 4,
+          diff_timeout: 1.0,
+          match_distance: 1000,
+          match_max_bits: 32,
+          match_threshold: 0.5,
+          patch_delete_threshold: 0.5,
+          patch_margin: 4}
 
-    iex> Options.valid_options!(%Options{match_max_bits: -1})
-    ** (ArgumentError) Invalid Options value(s)
+      iex> Options.valid_options!(%Options{match_max_bits: -1})
+      ** (ArgumentError) Invalid Options value(s)
 
   """
   @spec valid_options!(nil | t()) :: t()

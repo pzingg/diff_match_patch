@@ -4,6 +4,7 @@ defmodule DiffTest do
   import Dmp.StringUtils
 
   alias Dmp.{Diff, Options}
+
   doctest Dmp.Diff
 
   defp one_second() do

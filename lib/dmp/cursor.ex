@@ -40,8 +40,8 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.new()
-    %Cursor{current: nil, next: [], prev: []}
+      iex> Cursor.new()
+      %Cursor{current: nil, next: [], prev: []}
 
   """
 
@@ -57,14 +57,14 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_list([1, 2, 3])
-    %Cursor{current: nil, next: [1, 2, 3], prev: []}
+      iex> Cursor.from_list([1, 2, 3])
+      %Cursor{current: nil, next: [1, 2, 3], prev: []}
 
-    iex> Cursor.from_list([1, 2, 3]) |> Cursor.move_forward()
-    %Cursor{current: 1, next: [2, 3], prev: []}
+      iex> Cursor.from_list([1, 2, 3]) |> Cursor.move_forward()
+      %Cursor{current: 1, next: [2, 3], prev: []}
 
-    iex> Cursor.from_list([1, 2, 3], position: 1)
-    %Cursor{current: 2, next: [3], prev: [1]}
+      iex> Cursor.from_list([1, 2, 3], position: 1)
+      %Cursor{current: 2, next: [3], prev: [1]}
 
   """
   @spec from_list(list(), init_options()) :: t()
@@ -81,8 +81,8 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_split([1, 2, 3], [4, 5, 6])
-    %Cursor{current: 4, next: [5, 6], prev: [3, 2, 1]}
+      iex> Cursor.from_split([1, 2, 3], [4, 5, 6])
+      %Cursor{current: 4, next: [5, 6], prev: [3, 2, 1]}
 
   """
   @spec from_split(list(), list(), init_options()) :: t()
@@ -113,8 +113,8 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_list([1, 2, 3]) |> Cursor.to_list()
-    [1, 2, 3]
+      iex> Cursor.from_list([1, 2, 3]) |> Cursor.to_list()
+      [1, 2, 3]
 
   """
   @spec to_list(t()) :: list()
@@ -131,11 +131,11 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_list([]) |> Cursor.empty?()
-    true
+      iex> Cursor.from_list([]) |> Cursor.empty?()
+      true
 
-    iex> Cursor.from_list([1, 2, 3]) |> Cursor.empty?()
-    false
+      iex> Cursor.from_list([1, 2, 3]) |> Cursor.empty?()
+      false
 
   """
   @spec empty?(t()) :: boolean()
@@ -149,11 +149,11 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_list([1, 2, 3]) |> Cursor.before_first?()
-    true
+      iex> Cursor.from_list([1, 2, 3]) |> Cursor.before_first?()
+      true
 
-    iex> Cursor.from_list([1, 2, 3]) |> Cursor.move_forward() |> Cursor.before_first?()
-    false
+      iex> Cursor.from_list([1, 2, 3]) |> Cursor.move_forward() |> Cursor.before_first?()
+      false
 
   """
   @spec before_first?(t()) :: boolean()
@@ -165,17 +165,17 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.has_previous?()
-    false
+      iex> Cursor.from_list([1, 2]) |> Cursor.has_previous?()
+      false
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.has_previous?()
-    false
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.has_previous?()
+      false
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.has_previous?()
-    true
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.has_previous?()
+      true
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.has_previous?()
-    true
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.has_previous?()
+      true
 
   """
   @spec has_previous?(t()) :: boolean()
@@ -187,14 +187,14 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.after_last?()
-    false
+      iex> Cursor.from_list([1, 2]) |> Cursor.after_last?()
+      false
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.after_last?()
-    false
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.after_last?()
+      false
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.after_last?()
-    true
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.after_last?()
+      true
 
   """
   @spec after_last?(t()) :: boolean()
@@ -206,14 +206,14 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.has_next?()
-    true
+      iex> Cursor.from_list([1, 2]) |> Cursor.has_next?()
+      true
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.has_next?()
-    false
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.has_next?()
+      false
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.has_next?()
-    false
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.has_next?()
+      false
 
   """
   @spec has_next?(t()) :: boolean()
@@ -225,8 +225,8 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_list([1, 2, 3]) |> Cursor.count()
-    3
+      iex> Cursor.from_list([1, 2, 3]) |> Cursor.count()
+      3
 
   """
   @spec count(t()) :: non_neg_integer()
@@ -243,20 +243,20 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.position()
-    -1
+      iex> Cursor.from_list([1, 2]) |> Cursor.position()
+      -1
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.position()
-    0
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.position()
+      0
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.position()
-    1
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.position()
+      1
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.position()
-    2
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.position()
+      2
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(4) |> Cursor.position()
-    2
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(4) |> Cursor.position()
+      2
 
   """
   @spec position(t()) :: integer()
@@ -275,20 +275,20 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(-1)
-    %Cursor{current: nil, next: [1, 2, 3, 4, 5], prev: []}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(-1)
+      %Cursor{current: nil, next: [1, 2, 3, 4, 5], prev: []}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(0)
-    %Cursor{current: 1, next: [2, 3, 4, 5], prev: []}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(0)
+      %Cursor{current: 1, next: [2, 3, 4, 5], prev: []}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(1)
-    %Cursor{current: 2, next: [3, 4, 5], prev: [1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(1)
+      %Cursor{current: 2, next: [3, 4, 5], prev: [1]}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(:last)
-    %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(:last)
+      %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(:tail)
-    %Cursor{current: nil, next: [], prev: [5, 4, 3, 2, 1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_to(:tail)
+      %Cursor{current: nil, next: [], prev: [5, 4, 3, 2, 1]}
 
   """
   @spec move_to(t(), position_value()) :: t()
@@ -326,17 +326,17 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.new() |> Cursor.reset()
-    %Cursor{current: nil, next: [], prev: []}
+      iex> Cursor.new() |> Cursor.reset()
+      %Cursor{current: nil, next: [], prev: []}
 
-    iex> Cursor.from_list([1]) |> Cursor.move_forward() |> Cursor.reset()
-    %Cursor{current: nil, next: [1], prev: []}
+      iex> Cursor.from_list([1]) |> Cursor.move_forward() |> Cursor.reset()
+      %Cursor{current: nil, next: [1], prev: []}
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.reset()
-    %Cursor{current: nil, next: [1, 2], prev: []}
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.reset()
+      %Cursor{current: nil, next: [1, 2], prev: []}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.reset()
-    %Cursor{current: nil, next: [1, 2, 3, 4, 5], prev: []}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.reset()
+      %Cursor{current: nil, next: [1, 2, 3, 4, 5], prev: []}
 
   """
   def reset(%Cursor{} = c), do: move_to(c, -1)
@@ -347,17 +347,17 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> Cursor.new() |> Cursor.move_first()
-    %Cursor{current: nil, next: [], prev: []}
+      iex> Cursor.new() |> Cursor.move_first()
+      %Cursor{current: nil, next: [], prev: []}
 
-    iex> Cursor.from_list([1]) |> Cursor.move_first()
-    %Cursor{current: 1, next: [], prev: []}
+      iex> Cursor.from_list([1]) |> Cursor.move_first()
+      %Cursor{current: 1, next: [], prev: []}
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_first()
-    %Cursor{current: 1, next: [2], prev: []}
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_first()
+      %Cursor{current: 1, next: [2], prev: []}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_first()
-    %Cursor{current: 1, next: [2, 3, 4, 5], prev: []}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_first()
+      %Cursor{current: 1, next: [2, 3, 4, 5], prev: []}
 
   """
   @spec move_first(t()) :: t()
@@ -368,29 +368,29 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_forward()
-    %Cursor{current: 4, next: [5], prev: [3, 2, 1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_forward()
+      %Cursor{current: 4, next: [5], prev: [3, 2, 1]}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_forward(2)
-    %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_forward(2)
+      %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
 
-    iex> Cursor.from_list([1, 2, 3, 4, 5]) |> Cursor.move_forward(3)
-    %Cursor{current: 3, next: [4, 5], prev: [2, 1]}
+      iex> Cursor.from_list([1, 2, 3, 4, 5]) |> Cursor.move_forward(3)
+      %Cursor{current: 3, next: [4, 5], prev: [2, 1]}
 
-    iex> Cursor.from_list([1, 2, 3, 4, 5]) |> Cursor.move_forward(5)
-    %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
+      iex> Cursor.from_list([1, 2, 3, 4, 5]) |> Cursor.move_forward(5)
+      %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
 
-    iex> Cursor.from_list([1, 2, 3, 4, 5]) |> Cursor.move_forward(6)
-    %Cursor{current: nil, next: [], prev: [5, 4, 3, 2, 1]}
+      iex> Cursor.from_list([1, 2, 3, 4, 5]) |> Cursor.move_forward(6)
+      %Cursor{current: nil, next: [], prev: [5, 4, 3, 2, 1]}
 
-    iex> %Cursor{current: {:delete, "abc"}, next: [{:equal, "xxx"}, {:insert, "def"}], prev: []} |> Cursor.move_forward(1)
-    %Cursor{current: {:equal, "xxx"}, next: [{:insert, "def"}], prev: [{:delete, "abc"}]}
+      iex> %Cursor{current: {:delete, "abc"}, next: [{:equal, "xxx"}, {:insert, "def"}], prev: []} |> Cursor.move_forward(1)
+      %Cursor{current: {:equal, "xxx"}, next: [{:insert, "def"}], prev: [{:delete, "abc"}]}
 
-    iex> %Cursor{current: {:delete, "abc"}, next: [{:equal, "xxx"}, {:insert, "def"}], prev: []} |> Cursor.move_forward(2)
-    %Cursor{current: {:insert, "def"}, next: [], prev: [{:equal, "xxx"}, {:delete, "abc"}]}
+      iex> %Cursor{current: {:delete, "abc"}, next: [{:equal, "xxx"}, {:insert, "def"}], prev: []} |> Cursor.move_forward(2)
+      %Cursor{current: {:insert, "def"}, next: [], prev: [{:equal, "xxx"}, {:delete, "abc"}]}
 
-    iex> %Cursor{current: {:delete, "abc"}, next: [{:equal, "xxx"}, {:insert, "def"}], prev: []} |> Cursor.move_forward(3)
-    %Cursor{current: nil, next: [], prev: [{:insert, "def"}, {:equal, "xxx"}, {:delete, "abc"}]}
+      iex> %Cursor{current: {:delete, "abc"}, next: [{:equal, "xxx"}, {:insert, "def"}], prev: []} |> Cursor.move_forward(3)
+      %Cursor{current: nil, next: [], prev: [{:insert, "def"}, {:equal, "xxx"}, {:delete, "abc"}]}
 
   """
   @spec move_forward(t(), integer()) :: t()
@@ -429,14 +429,14 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_forward(5)
-    %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_forward(5)
+      %Cursor{current: 5, next: [], prev: [4, 3, 2, 1]}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_forward(1)
-    nil
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_forward(1)
+      nil
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_forward(3)
-    nil
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_forward(3)
+      nil
 
   """
   @spec find_forward(t(), term()) :: nil | t()
@@ -452,14 +452,14 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_back(1)
-    %Cursor{current: 2, next: [3, 4, 5], prev: [1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_back(1)
+      %Cursor{current: 2, next: [3, 4, 5], prev: [1]}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_back(2)
-    %Cursor{current: 1, next: [2, 3, 4, 5], prev: []}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_back(2)
+      %Cursor{current: 1, next: [2, 3, 4, 5], prev: []}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_back(3)
-    %Cursor{current: nil, next: [1, 2, 3, 4, 5], prev: []}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.move_back(3)
+      %Cursor{current: nil, next: [1, 2, 3, 4, 5], prev: []}
 
   """
   @spec move_back(t(), integer()) :: t()
@@ -498,14 +498,14 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_back(1)
-    %Cursor{current: 1, next: [2, 3, 4, 5], prev: []}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_back(1)
+      %Cursor{current: 1, next: [2, 3, 4, 5], prev: []}
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_back(5)
-    nil
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_back(5)
+      nil
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_back(3)
-    nil
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.find_back(3)
+      nil
 
   """
   @spec find_back(t(), term()) :: nil | t()
@@ -537,23 +537,23 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.get()
-    {2, 3, 4}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.get()
+      {2, 3, 4}
 
-    iex> Cursor.from_list([]) |> Cursor.get()
-    {nil, nil, nil}
+      iex> Cursor.from_list([]) |> Cursor.get()
+      {nil, nil, nil}
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.get()
-    {nil, nil, 1}
+      iex> Cursor.from_list([1, 2]) |> Cursor.get()
+      {nil, nil, 1}
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.get()
-    {nil, 1, 2}
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward() |> Cursor.get()
+      {nil, 1, 2}
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.get()
-    {1, 2, nil}
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(2) |> Cursor.get()
+      {1, 2, nil}
 
-    iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.get()
-    {2, nil, nil}
+      iex> Cursor.from_list([1, 2]) |> Cursor.move_forward(3) |> Cursor.get()
+      {2, nil, nil}
 
   """
   @spec get(t()) :: {term(), term(), term()}
@@ -566,8 +566,8 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.delete(1)
-    %Cursor{current: 4, next: [5], prev: [2, 1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.delete(1)
+      %Cursor{current: 4, next: [5], prev: [2, 1]}
 
   """
   @spec delete(t(), integer()) :: t()
@@ -593,8 +593,8 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.delete_before(1)
-    %Cursor{current: 3, next: [4, 5], prev: [1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.delete_before(1)
+      %Cursor{current: 3, next: [4, 5], prev: [1]}
 
   """
   @spec delete_before(t(), integer()) :: t()
@@ -612,8 +612,8 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.insert([10, 11])
-    %Cursor{current: 10, next: [11, 3, 4, 5], prev: [2, 1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.insert([10, 11])
+      %Cursor{current: 10, next: [11, 3, 4, 5], prev: [2, 1]}
 
   """
   @spec insert(t(), list()) :: t()
@@ -632,8 +632,8 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.insert_before([10, 11])
-    %Cursor{current: 3, next: [4, 5], prev: [11, 10, 2, 1]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.insert_before([10, 11])
+      %Cursor{current: 3, next: [4, 5], prev: [11, 10, 2, 1]}
 
   """
   @spec insert_before(t(), list()) :: t()
@@ -648,8 +648,8 @@ defmodule Dmp.Cursor do
 
   ## Examples
 
-    iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.insert_at_head([10, 11])
-    %Cursor{current: 3, next: [4, 5], prev: [2, 1, 11, 10]}
+      iex> %Cursor{current: 3, next: [4, 5], prev: [2, 1]} |> Cursor.insert_at_head([10, 11])
+      %Cursor{current: 3, next: [4, 5], prev: [2, 1, 11, 10]}
 
   """
   @spec insert_at_head(t(), list()) :: t()

@@ -31,19 +31,6 @@ defmodule Dmp.Diff do
 
   @type expiry() :: :never | non_neg_integer()
 
-  @typedoc """
-  The result of a successful `half_match` call.
-
-  A tuple of five strings:
-
-    1. the prefix of `text1`
-    2. the suffix of `text1`
-    3. the prefix of `text2`
-    4. the suffix of `text2`
-    5. the common middle
-  """
-  @type half_match_result() :: {String.t(), String.t(), String.t(), String.t(), String.t()}
-
   @doc """
   Find the differences between two texts.
 
@@ -895,6 +882,19 @@ defmodule Dmp.Diff do
     end
   end
 
+    @typedoc """
+  The result of a successful `Diff.half_match/3` call.
+
+  A tuple of five strings:
+
+    1. the prefix of `text1`
+    2. the suffix of `text1`
+    3. the prefix of `text2`
+    4. the suffix of `text2`
+    5. the common middle
+  """
+  @type half_match_result() :: {String.t(), String.t(), String.t(), String.t(), String.t()}
+
   @doc """
   Do the two texts share a substring which is at least half the length of
   the longer text?
@@ -1023,7 +1023,6 @@ defmodule Dmp.Diff do
     {prefix2, suffix2, prefix1, suffix1, common}
   end
 
-  @typedoc "A double-ended queue of equalities."
   @typep diffqueue() :: :queue.queue()
 
   defp safe_drop_r(queue, n \\ 1)
@@ -1388,6 +1387,33 @@ defmodule Dmp.Diff do
     * 2 if `one` ends, or `two` starts, with white space.
     * 1 if `one` ends, or `two` starts, with a non-alphanumeric.
     * 0 otherwise
+
+  ## Examples
+
+      iex> Diff.semantic_score("two is empty string", "")
+      6
+
+      iex> Diff.semantic_score("one ends in blank line\\n\\n", "two")
+      5
+
+      iex> Diff.semantic_score("one ends in new line\\n", "two")
+      4
+
+      iex> Diff.semantic_score("one sentence.", " space before two")
+      3
+
+      iex> Diff.semantic_score("one sentence.", "no space before two")
+      1
+
+      iex> Diff.semantic_score("one ends with white space ", "two")
+      2
+
+      iex> Diff.semantic_score("one ends in 'punctuation'", "two")
+      1
+
+      iex> Diff.semantic_score("one ends in middle of word", "two")
+      0
+
   """
   @spec semantic_score(String.t(), String.t()) :: non_neg_integer()
   def semantic_score("", _two), do: 6
@@ -1898,11 +1924,11 @@ defmodule Dmp.Diff do
 
   ## Examples
 
-    iex> Diff.main("The cat", "The big cat") |> Diff.x_index(1)
-    1
+      iex> Diff.main("The cat", "The big cat") |> Diff.x_index(1)
+      1
 
-    iex> Diff.main("The cat", "The big cat") |> Diff.x_index(4)
-    8
+      iex> Diff.main("The cat", "The big cat") |> Diff.x_index(4)
+      8
 
   """
   @spec x_index(difflist(), non_neg_integer()) :: non_neg_integer()
@@ -2032,8 +2058,8 @@ defmodule Dmp.Diff do
 
   ## Examples
 
-    |> iex [{:equal, "abc"}, {:delete, "de"}, {:insert, "ing"}] |> to_delta()
-    "=3\t-2\t+ing"
+      |> iex [{:equal, "abc"}, {:delete, "de"}, {:insert, "ing"}] |> to_delta() |> IO.inspect()
+      "=3\\t-2\\t+ing"
 
   """
   @spec to_delta(difflist()) :: String.t()
