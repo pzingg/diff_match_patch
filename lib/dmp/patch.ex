@@ -172,12 +172,12 @@ defmodule Dmp.Patch do
   from the provided diffs.
 
     * `diffs` - A difflist from `text1` to `text2`.
-    * `opts` - An `Options` struct, or `nil` to use default options.
+    * `opts` - A options keyword list, `[]` to use the default options.
 
   Returns a patchlist.
   """
-  @spec from_diffs(Diff.difflist(), nil | options()) :: patchlist()
-  def from_diffs(diffs, opts \\ nil) do
+  @spec from_diffs(Diff.difflist(), options()) :: patchlist()
+  def from_diffs(diffs, opts \\ []) do
     # No origin string provided, compute our own.
     text1 = Diff.text1(diffs)
     make(text1, diffs, opts)
@@ -192,13 +192,13 @@ defmodule Dmp.Patch do
     * `text1` - Old text.
     * `text2` - Ignored.
     * `diffs` - A difflist from `text1` to `text2`.
-    * `opts` - An `Options` struct, or `nil` to use default options.
+    * `opts` - A options keyword list, `[]` to use the default options.
 
   Returns a patchlist.
   """
-  @spec from_texts_and_diffs(String.t(), String.t(), Diff.difflist(), nil | options()) ::
+  @spec from_texts_and_diffs(String.t(), String.t(), Diff.difflist(), options()) ::
           patchlist()
-  def from_texts_and_diffs(text1, _text2, diffs, opts \\ nil) do
+  def from_texts_and_diffs(text1, _text2, diffs, opts \\ []) do
     make(text1, diffs, opts)
   end
 
@@ -210,15 +210,16 @@ defmodule Dmp.Patch do
 
     * If `b` is a String `text2`, a difflist that turns `text1` into `text2` will be computed.
     * If `b` is a difflist, it is the delta between `text1` and the target `text2`.
-    * `opts` - An `Options` struct, or `nil` to use default options.
+    * `opts` - A options keyword list, `[]` to use the default options.
 
   Returns a patchlist.
   """
-  @spec make(String.t(), String.t() | Diff.difflist(), nil | options()) :: patchlist()
-  def make(a, b, opts \\ nil)
+  @spec make(String.t(), String.t() | Diff.difflist(), options()) :: patchlist()
+  def make(a, b, opts \\ [])
 
   def make(text1, text2, opts) when is_binary(text2) do
     opts = Options.valid_options!(opts)
+    diff_edit_cost = Keyword.fetch!(opts, :diff_edit_cost)
 
     # No diffs provided, compute our own.
     diffs = Diff.main(text1, text2, true)
@@ -227,7 +228,7 @@ defmodule Dmp.Patch do
       if Enum.count(diffs) > 2 do
         diffs
         |> Diff.cleanup_semantic()
-        |> Diff.cleanup_efficiency(opts.diff_edit_cost)
+        |> Diff.cleanup_efficiency(diff_edit_cost)
       else
         diffs
       end
@@ -245,14 +246,28 @@ defmodule Dmp.Patch do
   defp make_impl(_text1, [], _opts), do: []
 
   defp make_impl(text1, diffs, opts) do
+    patch_margin = Keyword.fetch!(opts, :patch_margin)
+    match_max_bits = Keyword.fetch!(opts, :match_max_bits)
+
     {patches, patch, prepatch_text} =
       diffs
       |> Cursor.from_list(position: 0)
-      |> make_loop({[], %Patch{}, text1, text1, 0, 0}, opts.patch_margin, opts.match_max_bits)
+      |> make_loop(
+        {[], %Patch{}, text1, text1, 0, 0},
+        patch_margin,
+        match_max_bits
+      )
 
     if patch.diffs != [] do
       # Pick up the leftover patch if not empty.
-      patch = add_context(patch, prepatch_text, opts.patch_margin, opts.match_max_bits)
+      patch =
+        add_context(
+          patch,
+          prepatch_text,
+          patch_margin,
+          match_max_bits
+        )
+
       patches = patches ++ [patch]
 
       patches
@@ -434,20 +449,28 @@ defmodule Dmp.Patch do
 
     * `patches` - A patchlist.
     * `text` - Old text.
-    * `opts` - An `Options` struct, or `nil` to use default options.
+    * `opts` - A options keyword list, `[]` to use the default options.
 
   Returns a tuple with two elements: the new text, and a list of
   boolean values. Each boolean corresponds to a patch in the patchlist,
   and is `true` if a match was found for the corresponding patch.
   """
-  @spec apply(patchlist(), String.t(), nil | options()) :: {String.t(), list(boolean())}
+  @spec apply(patchlist(), String.t(), options()) :: {String.t(), list(boolean())}
   def apply([], text), do: {text, []}
 
-  def apply(patches, text, opts \\ nil) do
+  def apply(patches, text, opts \\ []) do
     opts = Options.valid_options!(opts)
-    {patches, null_padding} = add_padding(patches, opts.patch_margin)
+    patch_margin = Keyword.fetch!(opts, :patch_margin)
+    match_max_bits = Keyword.fetch!(opts, :match_max_bits)
+    {patches, null_padding} = add_padding(patches, patch_margin)
     text = null_padding <> text <> null_padding
-    patches = split_max(patches, opts.patch_margin, opts.match_max_bits)
+
+    patches =
+      split_max(
+        patches,
+        patch_margin,
+        match_max_bits
+      )
 
     {results, text, _delta, _opts} =
       Enum.reduce(
@@ -486,7 +509,8 @@ defmodule Dmp.Patch do
         if end_loc == -1 do
           substring(text, start_loc, start_loc + String.length(text1))
         else
-          substring(text, start_loc, end_loc + opts.match_max_bits)
+          match_max_bits = Keyword.fetch!(opts, :match_max_bits)
+          substring(text, start_loc, end_loc + match_max_bits)
         end
 
       {found, text} = apply_at_match(patch, text, text1, text2, start_loc, opts)
@@ -497,18 +521,25 @@ defmodule Dmp.Patch do
 
   defp find_expected_match(text, text1, expected_loc, opts) do
     text1_length = String.length(text1)
+    match_max_bits = Keyword.fetch!(opts, :match_max_bits)
 
-    if text1_length > opts.match_max_bits do
+    if text1_length > match_max_bits do
       # split_max will only provide an oversized pattern in the case of
       # a monster delete.
-      start_loc = Match.main(text, substring(text1, 0, opts.match_max_bits), expected_loc, opts)
+      start_loc =
+        Match.main(
+          text,
+          substring(text1, 0, match_max_bits),
+          expected_loc,
+          opts
+        )
 
       if start_loc != -1 do
         end_loc =
           Match.main(
             text,
-            substring(text1, text1_length - opts.match_max_bits),
-            expected_loc + text1_length - opts.match_max_bits,
+            substring(text1, text1_length - match_max_bits),
+            expected_loc + text1_length - match_max_bits,
             opts
           )
 
@@ -558,8 +589,8 @@ defmodule Dmp.Patch do
     lev = Diff.levenshtein(diffs)
     text1_length = String.length(text1)
 
-    text1_length > opts.match_max_bits &&
-      lev / text1_length > opts.patch_delete_threshold
+    text1_length > Keyword.fetch!(opts, :match_max_bits) &&
+      lev / text1_length > Keyword.fetch!(opts, :patch_delete_threshold)
   end
 
   def apply_match_diff({op, first_text}, acc_text, index1, diffs, start_loc) do

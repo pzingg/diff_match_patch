@@ -26,15 +26,16 @@ defmodule Dmp.Options do
             patch_delete_threshold: 0.5,
             patch_margin: 4
 
-  @type t() :: %Options{
-          diff_timeout: float(),
-          diff_edit_cost: non_neg_integer(),
-          match_max_bits: non_neg_integer(),
-          match_threshold: float(),
-          match_distance: non_neg_integer(),
-          patch_delete_threshold: float(),
-          patch_margin: non_neg_integer()
-        }
+  @type option() ::
+          {:diff_timeout, float()}
+          | {:diff_edit_cost, non_neg_integer()}
+          | {:match_max_bits, non_neg_integer()}
+          | {:match_threshold, float()}
+          | {:match_distance, non_neg_integer()}
+          | {:patch_delete_threshold, float()}
+          | {:patch_margin, non_neg_integer()}
+
+  @type t() :: [option()]
 
   @doc """
   Returns an `Options` struct with good default values:
@@ -42,54 +43,56 @@ defmodule Dmp.Options do
   ## Examples
 
       iex> Options.default()
-      %Options{
-          diff_edit_cost: 4,
-          diff_timeout: 1.0,
-          match_distance: 1000,
-          match_max_bits: 32,
-          match_threshold: 0.5,
-          patch_delete_threshold: 0.5,
-          patch_margin: 4}
+      [
+        diff_edit_cost: 4,
+        diff_timeout: 1.0,
+        match_distance: 1000,
+        match_max_bits: 32,
+        match_threshold: 0.5,
+        patch_delete_threshold: 0.5,
+        patch_margin: 4
+      ]
 
   """
-  def default(), do: %__MODULE__{}
+  @spec default() :: t()
+  def default(), do: %Options{} |> Map.from_struct() |> Enum.into([])
 
   @doc """
-  Validates an `Options` struct, raising an `ArgumentError` if it contains invalid values.
+  Validates an `Options` list, raising an `ArgumentError` if it contains invalid values.
 
-  If `nil` is passed, `Options.default()` will be returned.
+  If `[]` is passed, `Options.default()` will be returned.
 
   ## Examples
 
       iex> Options.valid_options!(nil)
-      %Options{
-          diff_edit_cost: 4,
-          diff_timeout: 1.0,
-          match_distance: 1000,
-          match_max_bits: 32,
-          match_threshold: 0.5,
-          patch_delete_threshold: 0.5,
-          patch_margin: 4}
+      [
+        diff_edit_cost: 4,
+        diff_timeout: 1.0,
+        match_distance: 1000,
+        match_max_bits: 32,
+        match_threshold: 0.5,
+        patch_delete_threshold: 0.5,
+        patch_margin: 4
+      ]
 
-      iex> Options.valid_options!(%Options{match_max_bits: -1})
+      iex> Options.valid_options!(match_max_bits: -1)
       ** (ArgumentError) Invalid Options value(s)
 
   """
-  @spec valid_options!(nil | t()) :: t()
-  def valid_options!(nil), do: default()
+  @spec valid_options!(t()) :: t()
+  def valid_options!([]), do: default()
 
   # credo:disable-for-lines:25 Credo.Check.Refactor.CyclomaticComplexity
-  def valid_options!(
-        %Options{
-          diff_timeout: diff_timeout,
-          diff_edit_cost: diff_edit_cost,
-          match_max_bits: match_max_bits,
-          match_threshold: match_threshold,
-          match_distance: match_distance,
-          patch_delete_threshold: patch_delete_threshold,
-          patch_margin: patch_margin
-        } = opts
-      ) do
+  def valid_options!(opts) do
+    opts = Keyword.merge(default(), opts) |> Enum.sort()
+    diff_timeout = Keyword.fetch!(opts, :diff_timeout)
+    diff_edit_cost = Keyword.fetch!(opts, :diff_edit_cost)
+    match_max_bits = Keyword.fetch!(opts, :match_max_bits)
+    match_threshold = Keyword.fetch!(opts, :match_threshold)
+    match_distance = Keyword.fetch!(opts, :match_distance)
+    patch_delete_threshold = Keyword.fetch!(opts, :patch_delete_threshold)
+    patch_margin = Keyword.fetch!(opts, :patch_margin)
+
     valid =
       match_max_bits >= 0 && match_max_bits <= 64 &&
         patch_margin >= 0 && patch_margin < match_max_bits &&

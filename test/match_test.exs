@@ -1,13 +1,9 @@
 defmodule MatchTest do
   use ExUnit.Case
 
-  alias Dmp.{Match, Options}
-  doctest Dmp.Match
+  alias Dmp.Match
 
-  defp with_match_threshold(t) do
-    opts = %Options{}
-    %Options{opts | match_threshold: t}
-  end
+  doctest Dmp.Match
 
   describe "alphabet" do
     test "abc" do
@@ -120,7 +116,7 @@ defmodule MatchTest do
                  "I am the very model of a modern major general.",
                  " that berry ",
                  5,
-                 with_match_threshold(0.7)
+                 match_threshold: 0.7
                )
     end
   end
