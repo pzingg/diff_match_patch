@@ -420,15 +420,17 @@ defmodule PatchTest do
     test "no side effects" do
       patches = Patch.make("", "test")
       patchstr = Patch.to_text(patches)
-      _results = Patch.apply(patches, "")
+      results = Patch.apply(patches, "")
       assert patchstr == Patch.to_text(patches)
+      assert {"test", [true]} == results
     end
 
     test "no side effects with major delete" do
       patches = Patch.make("The quick brown fox jumps over the lazy dog.", "Woof")
       patchstr = Patch.to_text(patches)
-      _results = Patch.apply(patches, "The quick brown fox jumps over the lazy dog.")
+      results = Patch.apply(patches, "The quick brown fox jumps over the lazy dog.")
       assert patchstr == Patch.to_text(patches)
+      assert {"Woof", [true, true]} == results
     end
 
     test "edge exact match" do

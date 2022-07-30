@@ -753,11 +753,7 @@ defmodule Dmp.Patch do
         |> Cursor.move_back()
         |> create_subpatches(
           bigpatch.diffs,
-          bigpatch.start1,
-          bigpatch.start2,
-          "",
-          patch_margin,
-          patch_size
+          {"", bigpatch.start1, bigpatch.start2, patch_margin, patch_size}
         )
       else
         Cursor.move_forward(patches)
@@ -766,17 +762,12 @@ defmodule Dmp.Patch do
     split_max_loop(patches, patch_margin, patch_size)
   end
 
-  defp create_subpatches(patches, [], _start1, _start2, _precontext, _patch_margin, _patch_size),
-    do: patches
+  defp create_subpatches(patches, [], _acc), do: patches
 
   defp create_subpatches(
          patches,
          bigpatch_diffs,
-         start1,
-         start2,
-         precontext,
-         patch_margin,
-         patch_size
+         {precontext, start1, start2, patch_margin, patch_size}
        ) do
     precontext_length = String.length(precontext)
     # Create one of several smaller patches.
@@ -794,16 +785,8 @@ defmodule Dmp.Patch do
         patch
       end
 
-    {bigpatch_diffs, patch, start1, start2, empty} =
-      subpatch_loop(
-        bigpatch_diffs,
-        patch,
-        start1,
-        start2,
-        true,
-        patch_margin,
-        patch_size
-      )
+    {bigpatch_diffs, patch, {start1, start2, empty, _patch_margin, _patch_size}} =
+      subpatch_loop(bigpatch_diffs, patch, {start1, start2, true, patch_margin, patch_size})
 
     # Compute the head context for the next patch.
     precontext = Diff.text2(patch.diffs)
@@ -854,80 +837,31 @@ defmodule Dmp.Patch do
     create_subpatches(
       patches,
       bigpatch_diffs,
-      start1,
-      start2,
-      precontext,
-      patch_margin,
-      patch_size
+      {precontext, start1, start2, patch_margin, patch_size}
     )
   end
 
-  def subpatch_loop(
-        [],
-        patch,
-        start1,
-        start2,
-        empty,
-        _patch_margin,
-        _patch_size
-      ) do
-    {[], patch, start1, start2, empty}
-  end
+  def subpatch_loop([], patch, acc), do: {[], patch, acc}
 
   def subpatch_loop(
         bigpatch_diffs,
         %Patch{length1: length1} = patch,
-        start1,
-        start2,
-        empty,
-        patch_margin,
-        patch_size
+        {_start1, _start2, _empty, patch_margin, patch_size} = acc
       )
       when length1 >= patch_size - patch_margin do
-    {bigpatch_diffs, patch, start1, start2, empty}
+    {bigpatch_diffs, patch, acc}
   end
 
-  def subpatch_loop(
-        [first_diff | rest],
-        patch,
-        start1,
-        start2,
-        empty,
-        patch_margin,
-        patch_size
-      ) do
-    {bigpatch_diffs, patch, start1, start2, empty} =
-      add_diff_to_subpatch(
-        first_diff,
-        rest,
-        patch,
-        start1,
-        start2,
-        empty,
-        patch_margin,
-        patch_size
-      )
-
-    subpatch_loop(
-      bigpatch_diffs,
-      patch,
-      start1,
-      start2,
-      empty,
-      patch_margin,
-      patch_size
-    )
+  def subpatch_loop([first_diff | rest], patch, acc) do
+    {bigpatch_diffs, patch, acc} = add_diff_to_subpatch(first_diff, rest, patch, acc)
+    subpatch_loop(bigpatch_diffs, patch, acc)
   end
 
   def add_diff_to_subpatch(
         {:insert, first_text} = first_diff,
         rest,
         patch,
-        start1,
-        start2,
-        _empty,
-        _patch_margin,
-        _patch_size
+        {start1, start2, _empty, patch_margin, patch_size}
       ) do
     # Insertions are harmless.
     text_length = String.length(first_text)
@@ -938,7 +872,7 @@ defmodule Dmp.Patch do
         length2: patch.length2 + text_length
     }
 
-    {rest, patch, start1, start2 + text_length, false}
+    {rest, patch, {start1, start2 + text_length, false, patch_margin, patch_size}}
   end
 
   # If the patch is just one equality
@@ -947,11 +881,7 @@ defmodule Dmp.Patch do
         {:delete, first_text} = first_diff,
         rest,
         %Patch{diffs: [{:equal, _}]} = patch,
-        start1,
-        start2,
-        empty,
-        patch_margin,
-        patch_size
+        {start1, start2, _empty, patch_margin, patch_size} = acc
       ) do
     text_length = String.length(first_text)
 
@@ -963,43 +893,16 @@ defmodule Dmp.Patch do
           length1: patch.length1 + text_length
       }
 
-      {rest, patch, start1 + text_length, start2, false}
+      {rest, patch, {start1 + text_length, start2, false, patch_margin, patch_size}}
     else
       # Handle same as :equal
-      add_other_diff_to_subpatch(
-        first_diff,
-        rest,
-        patch,
-        start1,
-        start2,
-        empty,
-        patch_margin,
-        patch_size
-      )
+      add_other_diff_to_subpatch(first_diff, rest, patch, acc)
     end
   end
 
   # Equality, or deletion when patch is not a single equality
-  def add_diff_to_subpatch(
-        first_diff,
-        rest,
-        patch,
-        start1,
-        start2,
-        empty,
-        patch_margin,
-        patch_size
-      ) do
-    add_other_diff_to_subpatch(
-      first_diff,
-      rest,
-      patch,
-      start1,
-      start2,
-      empty,
-      patch_margin,
-      patch_size
-    )
+  def add_diff_to_subpatch(first_diff, rest, patch, acc) do
+    add_other_diff_to_subpatch(first_diff, rest, patch, acc)
   end
 
   # Equality, or small deletion
@@ -1007,11 +910,7 @@ defmodule Dmp.Patch do
         {first_op, first_text},
         rest,
         patch,
-        start1,
-        start2,
-        empty,
-        patch_margin,
-        patch_size
+        {start1, start2, empty, patch_margin, patch_size}
       ) do
     # Deletion or equality.  Only take as much as we can stomach.
     diff_text =
@@ -1042,7 +941,7 @@ defmodule Dmp.Patch do
         [{first_op, first_text} | rest]
       end
 
-    {bigpatch_diffs, patch, start1, start2, empty}
+    {bigpatch_diffs, patch, {start1, start2, empty, patch_margin, patch_size}}
   end
 
   @doc """

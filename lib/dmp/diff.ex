@@ -882,7 +882,7 @@ defmodule Dmp.Diff do
     end
   end
 
-    @typedoc """
+  @typedoc """
   The result of a successful `Diff.half_match/3` call.
 
   A tuple of five strings:
