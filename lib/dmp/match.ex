@@ -78,16 +78,17 @@ defmodule Dmp.Match do
     # Initialise the bit arrays.
     matchmask = 1 <<< (pattern_length - 1)
     text_length = String.length(text)
-
     constants = {text, loc, s, matchmask, text_length, pattern_length, match_distance}
 
+    # Start with `max_distance = text_length + pattern_length`
+    # and the `rd` array all zeros.
+    acc = {best_loc, score_threshold, text_length + pattern_length, %{}}
+
     # Iterate over possible error levels
-    {best_loc, _score_threshold, _rd, _bin_max} =
-      Enum.reduce_while(
-        0..(pattern_length - 1),
-        {best_loc, score_threshold, %{}, text_length + pattern_length},
-        fn d, acc -> best_match_at_error_level(d, acc, constants) end
-      )
+    {best_loc, _score_threshold, _max_distance, _rd} =
+      Enum.reduce_while(0..(pattern_length - 1), acc, fn d, acc ->
+        best_match_at_error_level(d, acc, constants)
+      end)
 
     best_loc
   end
@@ -133,34 +134,36 @@ defmodule Dmp.Match do
   # `d` - Error level being scanned.
   # `best_loc` - The best location found.
   # `score_threshold` - The threshold for qualifying matches.
-  # `last_rd` - Sparse match array from previous error level.
-  # `bin_max` - The highest index (from 0 to `text_length + pattern_length`)
+  # `max_distance` - The highest distance from `loc` to seach within.
+  #   Starts at `text_length + pattern_length` and gets smaller.
+  # `last_rd` - Sparse array from previous error level.
   defp best_match_at_error_level(
          d,
-         {best_loc, score_threshold, last_rd, bin_max},
+         {best_loc, score_threshold, max_distance, last_rd},
          {text, loc, s, matchmask, text_length, pattern_length, match_distance}
        ) do
     constants_1 = {d, loc, pattern_length, score_threshold, match_distance}
 
-    bin_max =
-      bin_mid =
-      binary_search_scores(
+    distance =
+      best_distance(
         0,
-        bin_max,
-        bin_max,
+        max_distance,
+        max_distance,
         constants_1
       )
 
-    finish = min(loc + bin_mid, text_length) + pattern_length
-    start = max(1, loc - bin_mid + 1)
+    finish = min(loc + distance, text_length) + pattern_length
+    start = max(1, loc - distance + 1)
+
+    # `rd` is a sparse array of integers of capacity `finish + 2`
     rd = %{(finish + 1) => (1 <<< d) - 1}
-    acc_2 = {best_loc, score_threshold, rd, start}
+    acc_2 = {best_loc, score_threshold, start, rd}
 
     constants_2 = {d, text, loc, last_rd, s, matchmask, pattern_length, match_distance}
 
-    {best_loc, score_threshold, rd, _start} =
+    {best_loc, score_threshold, _start, rd} =
       Enum.reduce_while(finish..0//-1, acc_2, fn j, acc ->
-        update_error_level_scores(j, acc, constants_2)
+        bitap_update(j, acc, constants_2)
       end)
 
     # One last time
@@ -168,22 +171,29 @@ defmodule Dmp.Match do
 
     if score > score_threshold do
       # No hope for a (better) match at greater error levels.
-      {:halt, {best_loc, score_threshold, rd, bin_max}}
+      {:halt, {best_loc, score_threshold, distance, rd}}
     else
-      {:cont, {best_loc, score_threshold, rd, bin_max}}
+      {:cont, {best_loc, score_threshold, distance, rd}}
     end
   end
 
-  # Use a recursive binary search to find a partition of
-  # locations that meet the score threshold.
-  # Return the middle location of the search.
-  defp binary_search_scores(bin_min, bin_mid, _bin_max, _)
+  # Use a recursive binary search to find the
+  # location with the lowest bitap score within the
+  # range `loc + bin_min` to `loc + bin_max`.
+  #
+  # `bin_min` - Lowest distance from `loc`
+  # `bin_max` - Highest distance from `loc`
+  # `bin_mid` - Midpoint between `bin_min` and `bin_max`
+  #
+  # Returns `bin_mid`, where `loc + bin_mid` has
+  # the lowest bitap score.
+  defp best_distance(bin_min, bin_mid, _bin_max, _)
        when bin_min >= bin_mid do
     # Done
     bin_mid
   end
 
-  defp binary_search_scores(
+  defp best_distance(
          bin_min,
          bin_mid,
          bin_max,
@@ -199,7 +209,7 @@ defmodule Dmp.Match do
 
     bin_mid = div(bin_max - bin_min, 2) + bin_min
 
-    binary_search_scores(
+    best_distance(
       bin_min,
       bin_mid,
       bin_max,
@@ -207,15 +217,19 @@ defmodule Dmp.Match do
     )
   end
 
-  defp update_error_level_scores(j, {_best_loc, _score_threshold, _rd, start} = acc, _)
+  # This is the heart of the bitap algorithm
+  # Updates the bit array `rd` at the index `j` (representing the
+  # location `j - 1` in `text`, and then tests for a match.
+  # If a match is found
+  defp bitap_update(j, {_best_loc, _score_threshold, start, _rd} = acc, _)
        when j < start do
     # Exceeded our current distance from loc. Done.
     {:halt, acc}
   end
 
-  defp update_error_level_scores(
+  defp bitap_update(
          j,
-         {best_loc, score_threshold, rd, start},
+         {best_loc, score_threshold, start, rd},
          {d, text, loc, last_rd, s, matchmask, pattern_length, match_distance}
        ) do
     char_match = char_bitmask_at(s, text, j - 1)
@@ -236,16 +250,17 @@ defmodule Dmp.Match do
     rd = Map.put(rd, j, rd_j)
 
     if (rd_j &&& matchmask) != 0 do
-      update_score_at(
+      # Found a match
+      best_loc_at_error_level(
         d,
         j,
         loc,
-        {best_loc, score_threshold, rd, start},
+        {best_loc, score_threshold, start, rd},
         pattern_length,
         match_distance
       )
     else
-      {:cont, {best_loc, score_threshold, rd, start}}
+      {:cont, {best_loc, score_threshold, start, rd}}
     end
   end
 
@@ -263,11 +278,11 @@ defmodule Dmp.Match do
     end
   end
 
-  defp update_score_at(
+  defp best_loc_at_error_level(
          d,
          j,
          loc,
-         {best_loc, score_threshold, rd, start},
+         {best_loc, score_threshold, start, rd},
          pattern_length,
          match_distance
        ) do
@@ -282,14 +297,14 @@ defmodule Dmp.Match do
         # When passing loc, don't exceed our current distance from loc.
         start = max(1, 2 * loc - best_loc)
 
-        {:cont, {best_loc, score, rd, start}}
+        {:cont, {best_loc, score, start, rd}}
       else
         # Already passed loc, downhill from here on in.
 
-        {:halt, {best_loc, score, rd, start}}
+        {:halt, {best_loc, score, start, rd}}
       end
     else
-      {:cont, {best_loc, score_threshold, rd, start}}
+      {:cont, {best_loc, score_threshold, start, rd}}
     end
   end
 
