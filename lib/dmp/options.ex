@@ -76,36 +76,112 @@ defmodule Dmp.Options do
       ]
 
       iex> Options.valid_options!(match_max_bits: -1)
-      ** (ArgumentError) Invalid Options value(s)
+      ** (ArgumentError) Invalid options: match_max_bits (-1)
 
   """
   @spec valid_options!(t()) :: t()
   def valid_options!([]), do: default()
 
-  # credo:disable-for-lines:25 Credo.Check.Refactor.CyclomaticComplexity
+  # credo:disable-for-lines:21 Credo.Check.Refactor.CyclomaticComplexity
   def valid_options!(opts) when is_list(opts) do
     opts = Keyword.merge(default(), opts) |> Enum.sort()
-    diff_timeout = Keyword.fetch!(opts, :diff_timeout)
-    diff_edit_cost = Keyword.fetch!(opts, :diff_edit_cost)
-    match_max_bits = Keyword.fetch!(opts, :match_max_bits)
-    match_threshold = Keyword.fetch!(opts, :match_threshold)
-    match_distance = Keyword.fetch!(opts, :match_distance)
-    patch_delete_threshold = Keyword.fetch!(opts, :patch_delete_threshold)
-    patch_margin = Keyword.fetch!(opts, :patch_margin)
 
-    valid =
-      match_max_bits >= 0 && match_max_bits <= 64 &&
-        patch_margin >= 0 && patch_margin < match_max_bits &&
-        match_threshold >= 0 && match_threshold <= 1.0 &&
-        patch_delete_threshold >= 0 && patch_delete_threshold <= 1.0 &&
-        match_distance >= 0 &&
-        diff_edit_cost >= 0 &&
-        diff_timeout >= 0
+    {_, errors} =
+      {opts, []}
+      |> validate_diff_timeout()
+      |> validate_diff_edit_cost()
+      |> validate_match_max_bits()
+      |> validate_match_threshold()
+      |> validate_match_distance()
+      |> validate_patch_delete_threshold()
+      |> validate_patch_margin()
 
-    if valid do
+    if errors == [] do
       opts
     else
-      raise ArgumentError, "Invalid Options value(s)"
+      errors = Enum.map_join(errors, ", ", fn {name, value} -> name <> " (#{value})" end)
+      raise ArgumentError, "Invalid options: #{errors}"
+    end
+  end
+
+  defp valid_match_max_bits?(match_max_bits) do
+    match_max_bits > 0 && match_max_bits <= 128
+  end
+
+  defp valid_threshold?(value) do
+    value >= 0 and value <= 1
+  end
+
+  defp validate_diff_timeout({opts, errors}) do
+    diff_timeout = Keyword.fetch!(opts, :diff_timeout)
+
+    if diff_timeout >= 0 do
+      {opts, errors}
+    else
+      {opts, [{"diff_timeout", diff_timeout} | errors]}
+    end
+  end
+
+  defp validate_diff_edit_cost({opts, errors}) do
+    diff_edit_cost = Keyword.fetch!(opts, :diff_edit_cost)
+
+    if diff_edit_cost >= 0 do
+      {opts, errors}
+    else
+      {opts, [{"diff_edit_cost", diff_edit_cost} | errors]}
+    end
+  end
+
+  defp validate_match_max_bits({opts, errors}) do
+    match_max_bits = Keyword.fetch!(opts, :match_max_bits)
+
+    if valid_match_max_bits?(match_max_bits) do
+      {opts, errors}
+    else
+      {opts, [{"match_max_bits", match_max_bits} | errors]}
+    end
+  end
+
+  defp validate_match_threshold({opts, errors}) do
+    match_threshold = Keyword.fetch!(opts, :match_threshold)
+
+    if valid_threshold?(match_threshold) do
+      {opts, errors}
+    else
+      {opts, [{"match_threshold", match_threshold} | errors]}
+    end
+  end
+
+  defp validate_match_distance({opts, errors}) do
+    match_distance = Keyword.fetch!(opts, :match_distance)
+
+    if match_distance >= 0 do
+      {opts, errors}
+    else
+      {opts, [{"match_distance", match_distance} | errors]}
+    end
+  end
+
+  defp validate_patch_delete_threshold({opts, errors}) do
+    patch_delete_threshold = Keyword.fetch!(opts, :patch_delete_threshold)
+
+    if valid_threshold?(patch_delete_threshold) do
+      {opts, errors}
+    else
+      {opts, [{"patch_delete_threshold", patch_delete_threshold} | errors]}
+    end
+  end
+
+  defp validate_patch_margin({opts, errors}) do
+    match_max_bits = Keyword.fetch!(opts, :match_max_bits)
+    patch_margin = Keyword.fetch!(opts, :patch_margin)
+
+    if patch_margin >= 0 &&
+         (!valid_match_max_bits?(match_max_bits) ||
+            patch_margin < match_max_bits) do
+      {opts, errors}
+    else
+      {opts, [{"patch_margin", patch_margin} | errors]}
     end
   end
 end
