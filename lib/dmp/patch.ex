@@ -572,7 +572,7 @@ defmodule Dmp.Patch do
     # Imperfect match.  Run a diff to get a framework of equivalent indices.
     diffs = Diff.main_(text1, text2, false, opts)
 
-    if poor_match(diffs, text1, opts) do
+    if bad_match?(diffs, text1, opts) do
       # The end points match, but the content is unacceptably bad.
       {false, text}
     else
@@ -588,7 +588,7 @@ defmodule Dmp.Patch do
   end
 
   # Returns true if the end points match, but the content is unacceptably bad.
-  def poor_match(diffs, text1, opts) do
+  def bad_match?(diffs, text1, opts) do
     text1_length = String.length(text1)
 
     if text1_length > Keyword.fetch!(opts, :match_max_bits) do
