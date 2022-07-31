@@ -39,14 +39,14 @@ defmodule Dmp.Diff do
     * `check_lines` - Speedup flag.  If `false`, then don't run a
       line-level diff first to identify the changed areas. If `true`,
       then run a faster slightly less optimal diff.
-    * `opts` - An `Options` struct, or `nil` to use default options.
+    * `opts` - A options keyword list, `[]` to use the default options.
 
   Most of the time `check_lines` is wanted, so it defaults to `true`.
 
   Returns a difflist.
   """
-  @spec main(String.t(), String.t(), boolean(), nil | options()) :: difflist()
-  def main(text1, text2, check_lines \\ true, opts \\ nil) do
+  @spec main(String.t(), String.t(), boolean(), options()) :: difflist()
+  def main(text1, text2, check_lines \\ true, opts \\ []) do
     opts = Options.valid_options!(opts)
     main_(text1, text2, check_lines, opts)
   end
@@ -56,11 +56,13 @@ defmodule Dmp.Diff do
   """
   @spec main_(String.t(), String.t(), boolean(), options()) :: difflist()
   def main_(text1, text2, check_lines, opts) do
+    diff_timeout = Keyword.fetch!(opts, :diff_timeout)
+
     deadline =
-      if opts.diff_timeout <= 0 do
+      if diff_timeout <= 0 do
         :never
       else
-        :os.system_time(:millisecond) + round(opts.diff_timeout * 1000)
+        :os.system_time(:millisecond) + round(diff_timeout * 1000)
       end
 
     main_impl(text1, text2, check_lines, deadline)

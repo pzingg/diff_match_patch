@@ -18,12 +18,12 @@ defmodule Dmp.Match do
     * `text` - The text to search.
     * `pattern` - The pattern to search for.
     * `loc` - The location to search around.
-    * `opts` - An `Options` struct, or `nil` to use default options.
+    * `opts` - A options keyword list, `[]` to use the default options.
 
   Returns -1 if no match found.
   """
-  @spec main(String.t(), String.t(), non_neg_integer(), nil | options()) :: integer()
-  def main(text, pattern, loc, opts \\ nil) do
+  @spec main(String.t(), String.t(), non_neg_integer(), options()) :: integer()
+  def main(text, pattern, loc, opts \\ []) do
     opts = Options.valid_options!(opts)
 
     text_length = String.length(text)
@@ -46,7 +46,13 @@ defmodule Dmp.Match do
 
       true ->
         # Do a fuzzy compare.
-        bitap(text, pattern, loc, opts.match_threshold, opts.match_distance)
+        bitap(
+          text,
+          pattern,
+          loc,
+          Keyword.fetch!(opts, :match_threshold),
+          Keyword.fetch!(opts, :match_distance)
+        )
     end
   end
 

@@ -28,13 +28,11 @@ be found at <https://hexdocs.pm/cursor>.
 `match_threshold` option determines the exactness required:
 
 ```
-opts = Dmp.Options.default()
-opts = %Dmp.Options{opts | match_threshold: 0.7}
 loc = Dmp.Match.main(
     "I am the very model of a modern major general.",
     " that berry ",
     5,
-    opts)
+     match_threshold: 0.7)
 ```
 
 The value of `loc` is 4, finding the closest match at the string starting " the very".

@@ -3,17 +3,12 @@ defmodule DiffTest do
 
   import Dmp.StringUtils
 
-  alias Dmp.{Diff, Options}
+  alias Dmp.Diff
 
   doctest Dmp.Diff
 
   defp one_second() do
     :os.system_time(:millisecond) + 1_000
-  end
-
-  defp with_timeout(secs) do
-    opts = %Options{}
-    %Options{opts | diff_timeout: secs}
   end
 
   # Construct the two texts which made up the diff originally.
@@ -650,7 +645,7 @@ defmodule DiffTest do
     # Switch off the timeout.
 
     test "simple case 1" do
-      assert [{:delete, "a"}, {:insert, "b"}] == Diff.main("a", "b", false, with_timeout(0))
+      assert [{:delete, "a"}, {:insert, "b"}] == Diff.main("a", "b", false, diff_timeout: 0)
     end
 
     test "simple case 2" do
@@ -665,7 +660,7 @@ defmodule DiffTest do
                  "Apples are a fruit.",
                  "Bananas are also fruit.",
                  false,
-                 with_timeout(0)
+                 diff_timeout: 0
                )
     end
 
@@ -676,7 +671,7 @@ defmodule DiffTest do
                {:equal, "x"},
                {:delete, "\t"},
                {:insert, "\x00"}
-             ] == Diff.main("ax\t", "\u0680x\x00", false, with_timeout(0))
+             ] == Diff.main("ax\t", "\u0680x\x00", false, diff_timeout: 0)
     end
 
     test "overlap 1" do
@@ -687,12 +682,12 @@ defmodule DiffTest do
                {:equal, "b"},
                {:delete, "2"},
                {:insert, "xab"}
-             ] == Diff.main("1ayb2", "abxab", false, with_timeout(0))
+             ] == Diff.main("1ayb2", "abxab", false, diff_timeout: 0)
     end
 
     test "overlap 2" do
       assert [{:insert, "xaxcx"}, {:equal, "abc"}, {:delete, "y"}] ==
-               Diff.main("abcy", "xaxcxabc", false, with_timeout(0))
+               Diff.main("abcy", "xaxcxabc", false, diff_timeout: 0)
     end
 
     test "overlap 3" do
@@ -711,7 +706,7 @@ defmodule DiffTest do
                  "ABCDa=bcd=efghijklmnopqrsEFGHIJKLMNOefg",
                  "a-bcd-efghijklmnopqrs",
                  false,
-                 with_timeout(0)
+                 diff_timeout: 0
                )
     end
 
@@ -727,7 +722,7 @@ defmodule DiffTest do
                  "a [[Pennsylvania]] and [[New",
                  " and [[Pennsylvania]]",
                  false,
-                 with_timeout(0)
+                 diff_timeout: 0
                )
     end
   end
@@ -745,7 +740,7 @@ defmodule DiffTest do
     # Increase the text lengths by 1024 times to ensure a timeout.
     {a, b} = Enum.reduce(1..10, {a, b}, fn _, {a, b} -> {a <> a, b <> b} end)
     start_time = :os.system_time(:millisecond)
-    Diff.main(a, b, with_timeout(timeout))
+    Diff.main(a, b, diff_timeout: timeout)
     end_time = :os.system_time(:millisecond)
     # Test that we took at least the timeout period.
     assert timeout * 1_000 <= end_time - start_time

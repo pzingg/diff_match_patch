@@ -1,7 +1,7 @@
 defmodule PatchTest do
   use ExUnit.Case
 
-  alias Dmp.{Diff, Options, Patch}
+  alias Dmp.{Diff, Patch}
 
   doctest Dmp.Patch
 
@@ -28,16 +28,6 @@ defmodule PatchTest do
 
   defp repeats() do
     String.duplicate("abcdef", 100)
-  end
-
-  defp with_patch_delete_threshold(t) do
-    opts = Options.default()
-    %Options{opts | patch_delete_threshold: t}
-  end
-
-  defp with_zero_match_threshold_and_distance() do
-    opts = Options.default()
-    %Options{opts | match_threshold: 0, match_distance: 0}
   end
 
   test "Patch object" do
@@ -381,37 +371,37 @@ defmodule PatchTest do
     end
 
     test "big delete, big change 2" do
-      opts = with_patch_delete_threshold(0.6)
-
       patches =
         Patch.make(
           "x1234567890123456789012345678901234567890123456789012345678901234567890y",
           "xabcy",
-          opts
+          patch_delete_threshold: 0.6
         )
 
       results =
         Patch.apply(
           patches,
           "x12345678901234567890---------------++++++++++---------------12345678901234567890y",
-          opts
+          patch_delete_threshold: 0.6
         )
 
       assert {"xabcy", [true, true]} == results
     end
 
     test "compensate for failed patch" do
-      opts = with_zero_match_threshold_and_distance()
-
       patches =
         Patch.make(
           "abcdefghijklmnopqrstuvwxyz--------------------1234567890",
           "abcXXXXXXXXXXdefghijklmnopqrstuvwxyz--------------------1234567YYYYYYYYYY890",
-          opts
+          match_threshold: 0,
+          match_distance: 0
         )
 
       results =
-        Patch.apply(patches, "ABCDEFGHIJKLMNOPQRSTUVWXYZ--------------------1234567890", opts)
+        Patch.apply(patches, "ABCDEFGHIJKLMNOPQRSTUVWXYZ--------------------1234567890",
+          match_threshold: 0,
+          match_distance: 0
+        )
 
       assert {"ABCDEFGHIJKLMNOPQRSTUVWXYZ--------------------1234567YYYYYYYYYY890", [false, true]} ==
                results
