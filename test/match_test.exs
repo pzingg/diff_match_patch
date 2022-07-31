@@ -72,6 +72,17 @@ defmodule MatchTest do
       assert 8 == Match.bitap("abcdexyzabcde", "abccde", 5, 0.5, 100)
     end
 
+    test "multiple select loop" do
+      text = "abcdexyzabcde"
+
+      results =
+        Enum.map(0..(String.length(text) - 1), fn loc ->
+          Match.bitap("abcdexyzabcde", "abccde", loc, 0.5, 100)
+        end)
+
+      assert [0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8] == results
+    end
+
     test "strict distance 1" do
       assert -1 == Match.bitap("abcdefghijklmnopqrstuvwxyz", "abcdefg", 24, 0.5, 10)
     end
@@ -118,6 +129,12 @@ defmodule MatchTest do
                  5,
                  match_threshold: 0.7
                )
+    end
+
+    test "fuzzy score" do
+      {loc, score} = Match.bitap("abcdefghijk", "efxyhi", 1, 0.4, 100, true)
+      assert 4 == loc
+      assert_in_delta 0.36333, score, 0.00001
     end
   end
 end

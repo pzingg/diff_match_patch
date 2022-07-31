@@ -66,11 +66,27 @@ defmodule Dmp.Match do
       (0.0 = perfection, 1.0 = very loose, default = 0.5).
     * `match_distance` - How far to search for a match (0 = exact location,
       1000+ = broad match, default = 1000).
+    * `return_score` - Control what is returned. See the following.
 
-  Returns best match index or -1.
+  If `return_score` is false (the default), returns the index of the best
+    match closest to `loc` in `text`, or -1 if no suitable match was found.
+
+  If `return_score` is true, returns a tuple with two elements:
+    * The best match index, or -1.
+    * The adjusted match score at the returned index (a value less than
+      or equal to the `match_threshold`). If no match was found,
+      the score is 1.
   """
-  @spec bitap(String.t(), String.t(), non_neg_integer(), float(), non_neg_integer()) :: integer()
-  def bitap(text, pattern, loc, match_threshold \\ 0.5, match_distance \\ 1000) do
+  @spec bitap(String.t(), String.t(), non_neg_integer(), float(), non_neg_integer(), boolean()) ::
+          integer()
+  def bitap(
+        text,
+        pattern,
+        loc,
+        match_threshold \\ 0.5,
+        match_distance \\ 1000,
+        return_score \\ false
+      ) do
     pattern_length = String.length(pattern)
 
     # `best_loc` - Is there a nearby exact match? (speedup), -1 if not found.
@@ -91,12 +107,20 @@ defmodule Dmp.Match do
     acc = {best_loc, score_threshold, text_length + pattern_length, %{}}
 
     # Iterate over possible error levels
-    {best_loc, _score_threshold, _max_distance, _rd} =
+    {best_loc, score, _max_distance, _rd} =
       Enum.reduce_while(0..(pattern_length - 1), acc, fn d, acc ->
         best_match_at_error_level(d, acc, constants)
       end)
 
-    best_loc
+    if return_score do
+      if best_loc == -1 do
+        {-1, 1.0}
+      else
+        {best_loc, score}
+      end
+    else
+      best_loc
+    end
   end
 
   # Set a starting point if an exact match can be found,
@@ -119,12 +143,12 @@ defmodule Dmp.Match do
           -1 ->
             {best_loc, score}
 
-          best_loc_2 ->
+          best_loc2 ->
             # Second  match of pattern in text
-            score_2 = bitap_score(0, best_loc_2, loc, pattern_length, match_distance)
+            score2 = bitap_score(0, best_loc2, loc, pattern_length, match_distance)
 
-            if score_2 < score do
-              {best_loc_2, score_2}
+            if score2 < score do
+              {best_loc2, score2}
             else
               {best_loc, score}
             end
@@ -163,13 +187,12 @@ defmodule Dmp.Match do
 
     # `rd` is a sparse array of integers of capacity `finish + 2`
     rd = %{(finish + 1) => (1 <<< d) - 1}
-    acc_2 = {best_loc, score_threshold, start, rd}
-
-    constants_2 = {d, text, loc, last_rd, s, matchmask, pattern_length, match_distance}
+    acc2 = {best_loc, score_threshold, start, rd}
+    constants2 = {d, text, loc, last_rd, s, matchmask, pattern_length, match_distance}
 
     {best_loc, score_threshold, _start, rd} =
-      Enum.reduce_while(finish..0//-1, acc_2, fn j, acc ->
-        bitap_update(j, acc, constants_2)
+      Enum.reduce_while(finish..0//-1, acc2, fn j, acc ->
+        bitap_update(j, acc, constants2)
       end)
 
     # One last time

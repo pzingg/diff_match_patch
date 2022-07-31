@@ -7,10 +7,16 @@ defmodule Dmp.Diff do
 
   alias Dmp.{Cursor, Options}
 
-  @typedoc "A diff's operation type."
-  @type op() :: :delete | :insert | :equal
+  @typedoc """
+  A diff's operation type. The operation `:nil` is used internally
+  to indicate a nil value for the diff.
+  """
+  @type op() :: :delete | :insert | :equal | nil
 
-  @typedoc "The diff tuple, consisting of two elements: the operation and the associated text."
+  @typedoc """
+  The diff tuple, consisting of two elements: the operation
+  and the associated text.
+  """
   @type t() :: {op(), String.t()}
 
   @typedoc """
@@ -251,6 +257,9 @@ defmodule Dmp.Diff do
             end
 
           {diffs2, 0, 0, "", ""}
+
+        _ ->
+          raise RuntimeError, "Invalid operation #{inspect(op)}"
       end
 
     line_mode_loop(
@@ -1668,10 +1677,6 @@ defmodule Dmp.Diff do
     |> remove_dummy()
   end
 
-  # Extract text for prefix and suffix from prev_diff and next_diff
-  defp undiff({op, text}), do: {op, text}
-  defp undiff(_), do: {:equal, ""}
-
   @type first_pass_acc() ::
           {non_neg_integer(), non_neg_integer(), String.t(), String.t()}
 
@@ -1714,6 +1719,9 @@ defmodule Dmp.Diff do
             end
 
           {diffs, {0, 0, "", ""}}
+
+        _ ->
+          raise RuntimeError, "Invalid operation #{inspect(op)}"
       end
 
     diffs
@@ -1766,7 +1774,7 @@ defmodule Dmp.Diff do
 
       diffs =
         if is_tuple(prev_diff) do
-          {prev_op, prev_text} = undiff(prev_diff)
+          {prev_op, prev_text} = prev_diff
 
           if prev_op != :equal do
             raise RuntimeError, "Previous diff should have been an equality."
@@ -1951,6 +1959,9 @@ defmodule Dmp.Diff do
 
             :delete ->
               {chars1 + text_length, chars2}
+
+            _ ->
+              raise RuntimeError, "Invalid operation #{inspect(op)}"
           end
 
         if chars1 > loc do
@@ -1992,6 +2003,7 @@ defmodule Dmp.Diff do
         :insert -> acc <> "<ins style=\"background:#e6ffe6;\">" <> text <> "</ins>"
         :delete -> acc <> "<del style=\"background:#ffe6e6;\">" <> text <> "</del>"
         :equal -> acc <> "<span>" <> text <> "</span>"
+        _ -> raise RuntimeError, "Invalid operation #{inspect(op)}"
       end
     end)
   end
@@ -2044,6 +2056,9 @@ defmodule Dmp.Diff do
           :equal ->
             # A deletion and an insertion is one substitution.
             {levenshtein + max(insertions, deletions), 0, 0}
+
+          _ ->
+            raise RuntimeError, "Invalid operation #{inspect(op)}"
         end
       end)
 
@@ -2077,6 +2092,9 @@ defmodule Dmp.Diff do
 
           :equal ->
             acc <> "=#{String.length(text)}\t"
+
+          _ ->
+            raise RuntimeError, "Invalid operation #{inspect(op)}"
         end
       end)
 
@@ -2165,4 +2183,12 @@ defmodule Dmp.Diff do
         raise ArgumentError, "Invalid number in from_delta: #{param}"
     end
   end
+
+  @doc """
+  Returns the diff tuple, or a "nil" pseudo-diff (with op `:nil`
+  and empty text).
+  """
+  @spec undiff(nil | t()) :: t()
+  def undiff({op, text}), do: {op, text}
+  def undiff(nil), do: {nil, ""}
 end

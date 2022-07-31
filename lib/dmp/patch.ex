@@ -75,6 +75,9 @@ defmodule Dmp.Patch do
 
           :equal ->
             " "
+
+          _ ->
+            raise RuntimeError, "Invalid operation #{inspect(op)}"
         end
 
       text = uri_encode(text)
@@ -534,7 +537,9 @@ defmodule Dmp.Patch do
           opts
         )
 
-      if start_loc != -1 do
+      if start_loc == -1 do
+        {-1, -1}
+      else
         end_loc =
           Match.main(
             text,
@@ -549,8 +554,6 @@ defmodule Dmp.Patch do
         else
           {start_loc, end_loc}
         end
-      else
-        {start_loc, -1}
       end
     else
       {Match.main(text, text1, expected_loc, opts), -1}
@@ -586,11 +589,14 @@ defmodule Dmp.Patch do
 
   # Returns true if the end points match, but the content is unacceptably bad.
   def poor_match(diffs, text1, opts) do
-    lev = Diff.levenshtein(diffs)
     text1_length = String.length(text1)
 
-    text1_length > Keyword.fetch!(opts, :match_max_bits) &&
-      lev / text1_length > Keyword.fetch!(opts, :patch_delete_threshold)
+    if text1_length > Keyword.fetch!(opts, :match_max_bits) do
+      normalized_lev = Diff.levenshtein(diffs) / text1_length
+      normalized_lev > Keyword.fetch!(opts, :patch_delete_threshold)
+    else
+      false
+    end
   end
 
   def apply_match_diff({op, first_text}, acc_text, index1, diffs, start_loc) do
@@ -621,6 +627,9 @@ defmodule Dmp.Patch do
             substring(acc_text, start_loc + index3)
 
         {acc_text, index1}
+
+      _ ->
+        raise RuntimeError, "Invalid operation #{inspect(op)}"
     end
   end
 
@@ -680,19 +689,9 @@ defmodule Dmp.Patch do
     padding_length = String.length(null_padding)
     first_diff = List.first(first_patch.diffs)
 
-    if is_nil(first_diff) || elem(first_diff, 0) != :equal do
-      # Add null_padding equality.
-      # start1 and start2 should be 0.
-      %Patch{
-        first_patch
-        | diffs: [{:equal, null_padding} | first_patch.diffs],
-          start1: first_patch.start1 - padding_length,
-          start2: first_patch.start2 - padding_length,
-          length1: first_patch.length1 + padding_length,
-          length2: first_patch.length2 + padding_length
-      }
-    else
-      {op, text} = first_diff
+    {op, text} = Diff.undiff(first_diff)
+
+    if op == :equal do
       text_length = String.length(text)
 
       if padding_length > text_length do
@@ -712,6 +711,18 @@ defmodule Dmp.Patch do
       else
         first_patch
       end
+    else
+      # :nil, :insert, or :delete
+      # Add null_padding equality.
+      # start1 and start2 should be 0.
+      %Patch{
+        first_patch
+        | diffs: [{:equal, null_padding} | first_patch.diffs],
+          start1: first_patch.start1 - padding_length,
+          start2: first_patch.start2 - padding_length,
+          length1: first_patch.length1 + padding_length,
+          length2: first_patch.length2 + padding_length
+      }
     end
   end
 
@@ -720,16 +731,9 @@ defmodule Dmp.Patch do
     padding_length = String.length(null_padding)
     last_diff = List.last(last_patch.diffs)
 
-    if is_nil(last_diff) || elem(last_diff, 0) != :equal do
-      # Add null_padding equality.
-      %Patch{
-        last_patch
-        | diffs: last_patch.diffs ++ [{:equal, null_padding}],
-          length1: last_patch.length1 + padding_length,
-          length2: last_patch.length2 + padding_length
-      }
-    else
-      {op, text} = last_diff
+    {op, text} = Diff.undiff(last_diff)
+
+    if op == :equal do
       text_length = String.length(text)
 
       if padding_length > text_length do
@@ -746,6 +750,15 @@ defmodule Dmp.Patch do
       else
         last_patch
       end
+    else
+      # :nil, :insert, or :delete
+      # Add null_padding equality.
+      %Patch{
+        last_patch
+        | diffs: last_patch.diffs ++ [{:equal, null_padding}],
+          length1: last_patch.length1 + padding_length,
+          length2: last_patch.length2 + padding_length
+      }
     end
   end
 
@@ -837,11 +850,13 @@ defmodule Dmp.Patch do
       if postcontext != "" do
         postcontext_length = String.length(postcontext)
         last_diff = List.last(patch.diffs)
+        {op, text} = Diff.undiff(last_diff)
 
         patch_diffs =
-          if is_tuple(last_diff) && elem(last_diff, 0) == :equal do
-            Enum.drop(patch.diffs, -1) ++ [{:equal, elem(last_diff, 1) <> postcontext}]
+          if op == :equal do
+            Enum.drop(patch.diffs, -1) ++ [{:equal, text <> postcontext}]
           else
+            # :nil, :insert, or :delete
             patch.diffs ++ [{:equal, postcontext}]
           end
 

@@ -23,6 +23,9 @@ defmodule DiffTest do
 
         :equal ->
           {text1 <> text, text2 <> text}
+
+        _ ->
+          raise RuntimeError, "Invalid operation #{inspect(op)}"
       end
     end)
   end

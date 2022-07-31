@@ -64,7 +64,7 @@ defmodule Dmp.Options do
 
   ## Examples
 
-      iex> Options.valid_options!(nil)
+      iex> Options.valid_options!([])
       [
         diff_edit_cost: 4,
         diff_timeout: 1.0,
@@ -83,7 +83,7 @@ defmodule Dmp.Options do
   def valid_options!([]), do: default()
 
   # credo:disable-for-lines:25 Credo.Check.Refactor.CyclomaticComplexity
-  def valid_options!(opts) do
+  def valid_options!(opts) when is_list(opts) do
     opts = Keyword.merge(default(), opts) |> Enum.sort()
     diff_timeout = Keyword.fetch!(opts, :diff_timeout)
     diff_edit_cost = Keyword.fetch!(opts, :diff_edit_cost)
