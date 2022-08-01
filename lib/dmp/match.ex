@@ -7,10 +7,25 @@ defmodule Dmp.Match do
   use Bitwise, only_operators: true
 
   import Dmp.StringUtils
+  # import Dmp.DebugUtils
 
   alias Dmp.Options
 
   @type options() :: Options.t()
+
+  @typedoc """
+  A bitarray encoding the locations of characters within the search pattern.
+
+  The index is the ordinal value of the character.
+  """
+  @type alpha() :: %{non_neg_integer() => non_neg_integer()}
+
+  @typedoc """
+  A bitarray encoding possible match sequences of the search pattern within the text.
+
+  The index is the location of the text, plus one.
+  """
+  @type bitap_array() :: %{integer() => non_neg_integer()}
 
   @doc """
   Locate the best instance of `pattern` in `text` near `loc`.
@@ -57,7 +72,10 @@ defmodule Dmp.Match do
   end
 
   @doc """
-  Locate the best instance of `pattern` in `text` near `loc` using the Bitap algorithm.
+  Search for the best instance of `pattern` in `text` near `loc`, with errors,
+  using the Bitap algorithm.
+
+  See: [Fast Text Searching with Errors (Wu and Manber, 1991)](http://www.club.cc.cmu.edu/~ajo/docs/agrep.pdf).
 
     * `text` - The text to search.
     * `pattern` - The pattern to search for.
@@ -99,17 +117,24 @@ defmodule Dmp.Match do
 
     # Initialise the bit arrays.
     matchmask = 1 <<< (pattern_length - 1)
+    shiftmask = (1 <<< pattern_length) - 1
     text_length = String.length(text)
-    constants = {text, loc, s, matchmask, text_length, pattern_length, match_distance}
+
+    constants =
+      {text, pattern, loc, s, matchmask, shiftmask, text_length, pattern_length, match_distance}
+
+    # debug_alphabet(pattern, s)
 
     # Start with `max_distance = text_length + pattern_length`
-    # and the `rd` array all zeros.
-    acc = {best_loc, score_threshold, text_length + pattern_length, %{}}
+    # and the $$R_j^0$$ array all zero (empty map).
+    max_distance = text_length + pattern_length
+    rd_0 = %{}
+    acc = {best_loc, score_threshold, max_distance, rd_0}
 
     # Iterate over possible error levels
     {best_loc, score, _max_distance, _rd} =
       Enum.reduce_while(0..(pattern_length - 1), acc, fn d, acc ->
-        best_match_at_error_level(d, acc, constants)
+        search_at_error_level(d, acc, constants)
       end)
 
     if return_score do
@@ -156,49 +181,71 @@ defmodule Dmp.Match do
     end
   end
 
-  # Scan for the best match; each iteration allows for one more error.
-  # Run a binary search to determine how far from 'loc' we can stray at
-  # this error level.
+  # Scan for the best match of the pattern in the source text with `d` errors
+  # of insertion, deletion, or substitution.
+  #
+  # Each iteration allows for one more error.
+  #
+  # At each error level:
+  #   1. Run a binary search to determine how far from 'loc' we can stray at
+  #      this error level (`best_distance`)
+  #   2. Update the bitarray $$R_j^d$$ for this error level and check
+  #      for a pattern match.  Return the location of the best match.
+  #   3. Check to see if there might be a better score at a higher error level.
+  #
   # Use the result from this iteration as the maximum for the next.
   #
   # `d` - Error level being scanned.
   # `best_loc` - The best location found.
-  # `score_threshold` - The threshold for qualifying matches.
-  # `max_distance` - The highest distance from `loc` to seach within.
-  #   Starts at `text_length + pattern_length` and gets smaller.
-  # `last_rd` - Sparse array from previous error level.
-  defp best_match_at_error_level(
+  # `score_threshold` - The threshold for qualifying matches. Gets smaller
+  #   after each iteration.
+  # `max_distance` - The highest distance from `loc` to search within.
+  #   Starts at `text_length + pattern_length` and gets smaller after
+  #   each iteration.
+  # `last_rd` - $$R_j^{d-1}$$ in the Wu and Manber paper. Bitarray from the
+  #   previous `d-1` error level.
+  # `text_length - $$n$$ in the Wu and Manber paper.
+  # `pattern_length` - $$m$$ in the Wu and Manber paper.
+  # `matchmask` - Bitmask to test the value of $$R_j+1[m]$$.
+  #
+  # Returns updated `best_loc`, `score_threshold`, and `max_distance`,
+  # and the calculated $$R_j^d$$ bitarray from this level.
+  defp search_at_error_level(
          d,
          {best_loc, score_threshold, max_distance, last_rd},
-         {text, loc, s, matchmask, text_length, pattern_length, match_distance}
+         {text, _pattern, loc, s, matchmask, shiftmask, text_length, pattern_length,
+          match_distance}
        ) do
-    constants_1 = {d, loc, pattern_length, score_threshold, match_distance}
-
     distance =
       best_distance(
         0,
         max_distance,
         max_distance,
-        constants_1
+        {d, loc, pattern_length, score_threshold, match_distance}
       )
 
-    finish = min(loc + distance, text_length) + pattern_length
     start = max(1, loc - distance + 1)
+    finish = min(loc + distance, text_length) + pattern_length
 
     # `rd` is a sparse array of integers of capacity `finish + 2`
-    rd = %{(finish + 1) => (1 <<< d) - 1}
+    # for debugging we store the "size" of the array at index -1
+    rd = %{(finish + 1) => (1 <<< d) - 1, -1 => finish + 2}
     acc2 = {best_loc, score_threshold, start, rd}
-    constants2 = {d, text, loc, last_rd, s, matchmask, pattern_length, match_distance}
+    constants2 = {d, text, loc, last_rd, s, matchmask, shiftmask, pattern_length, match_distance}
 
-    {best_loc, score_threshold, _start, rd} =
+    {best_loc, score_threshold, _j, rd} =
       Enum.reduce_while(finish..0//-1, acc2, fn j, acc ->
         bitap_update(j, acc, constants2)
       end)
 
-    # One last time
-    score = bitap_score(d + 1, loc, loc, pattern_length, match_distance)
+    # See if the threshold for match at level `d + 1` is lower than the best
+    # score we found at this level, in which case we have to continue to
+    # that level.
+    d1_score = bitap_score(d + 1, loc, loc, pattern_length, match_distance)
 
-    if score > score_threshold do
+    # debug_rd(text, pattern, d, rd, j, best_loc)
+
+    if d1_score > score_threshold do
       # No hope for a (better) match at greater error levels.
       {:halt, {best_loc, score_threshold, distance, rd}}
     else
@@ -206,17 +253,20 @@ defmodule Dmp.Match do
     end
   end
 
-  # Use a recursive binary search to find the
-  # location with the lowest bitap score within the
+  # Perform a binary search to find the location with the lowest bitap score within the
   # range `loc + bin_min` to `loc + bin_max`.
   #
   # `bin_min` - Lowest distance from `loc`
   # `bin_max` - Highest distance from `loc`
   # `bin_mid` - Midpoint between `bin_min` and `bin_max`
   #
-  # Returns `bin_mid`, where `loc + bin_mid` has
-  # the lowest bitap score.
-  defp best_distance(bin_min, bin_mid, _bin_max, _)
+  # Returns `bin_mid`, where `loc + bin_mid` has the lowest bitap score.
+  defp best_distance(
+         bin_min,
+         bin_mid,
+         _bin_max,
+         _acc
+       )
        when bin_min >= bin_mid do
     # Done
     bin_mid
@@ -229,8 +279,11 @@ defmodule Dmp.Match do
          {d, loc, pattern_length, score_threshold, match_distance}
        ) do
     # Loop
+    mid_loc = loc + bin_mid
+    score = bitap_score(d, mid_loc, loc, pattern_length, match_distance)
+
     {bin_min, bin_max} =
-      if bitap_score(d, loc + bin_mid, loc, pattern_length, match_distance) <= score_threshold do
+      if score <= score_threshold do
         {bin_mid, bin_max}
       else
         {bin_min, bin_mid}
@@ -246,23 +299,38 @@ defmodule Dmp.Match do
     )
   end
 
-  # This is the heart of the bitap algorithm
-  # Updates the bit array `rd` at the index `j` (representing the
-  # location `j - 1` in `text`, and then tests for a match.
-  # If a match is found
-  defp bitap_update(j, {_best_loc, _score_threshold, start, _rd} = acc, _)
+  # This is the heart of the bitap algorithm.
+  #
+  # Updates the `rd` bitarray for the current error level `d` at the index `j`
+  # (representing the zero-based location `j - 1` in `text`), and
+  # then tests for a match (an exact match if `d == 0` or a match with
+  # `d` errors).
+  #
+  # If a match is found, we calculate the error score (number of errors and
+  # distance from expected location) and if it's lower than the current
+  # threshold, we stop calculating the update if we have already gone
+  # below the minimum possible location, or continue the update
+  # going with a smaller range of indices.
+  defp bitap_update(
+         j,
+         {best_loc, score_threshold, start, rd},
+         _constants
+       )
        when j < start do
     # Exceeded our current distance from loc. Done.
-    {:halt, acc}
+    # Return `j + 1` in the `start` position and break the iteration.
+    {:halt, {best_loc, score_threshold, j + 1, rd}}
   end
 
   defp bitap_update(
          j,
          {best_loc, score_threshold, start, rd},
-         {d, text, loc, last_rd, s, matchmask, pattern_length, match_distance}
+         {d, text, loc, last_rd, s, matchmask, shiftmask, pattern_length, match_distance}
        ) do
-    char_match = char_bitmask_at(s, text, j - 1)
-    rd_j_1 = (Map.get(rd, j + 1, 0) <<< 1 ||| 1) &&& char_match
+    char_match = s_c(s, String.at(text, j - 1))
+
+    rd_j_1 = Map.get(rd, j + 1, 0) |> shift_left(shiftmask)
+    rd_j_1 = rd_j_1 &&& char_match
 
     rd_j =
       if d == 0 do
@@ -271,8 +339,9 @@ defmodule Dmp.Match do
       else
         # Subsequent passes: fuzzy match.
         last_rd_j_1 = Map.get(last_rd, j + 1, 0)
-        last_rd_j = Map.get(last_rd, j, 0) ||| last_rd_j_1
-        rd_j_1 ||| (last_rd_j <<< 1 ||| 1) ||| last_rd_j_1
+        last_rd_j = Map.get(last_rd, j, 0)
+        last_rd_j = (last_rd_j ||| last_rd_j_1) |> shift_left(shiftmask)
+        rd_j_1 ||| last_rd_j ||| last_rd_j_1
       end
 
     # Update mask array
@@ -280,40 +349,33 @@ defmodule Dmp.Match do
 
     if (rd_j &&& matchmask) != 0 do
       # Found a match
-      best_loc_at_error_level(
+      test_score_at_match(
         d,
         j,
         loc,
         {best_loc, score_threshold, start, rd},
-        pattern_length,
-        match_distance
+        {pattern_length, match_distance}
       )
     else
       {:cont, {best_loc, score_threshold, start, rd}}
     end
   end
 
-  defp char_bitmask_at(s, text, index) do
-    case String.at(text, index) do
-      nil ->
-        0
-
-      "" ->
-        0
-
-      ch ->
-        ord = String.to_charlist(ch) |> List.first()
-        Map.get(s, ord, 0)
-    end
+  # Keep values during shifts from overflowing by ANDing with `shiftmask`
+  defp shift_left(val, shiftmask) do
+    (val <<< 1 &&& shiftmask) ||| 1
   end
 
-  defp best_loc_at_error_level(
+  # We found a match during `bitap_update/3`. Verify
+  # that it is the best match and either stop the `rd` array update
+  # if we have already passed `loc` or reduce the range of indices
+  # that need to be calculated.
+  defp test_score_at_match(
          d,
          j,
          loc,
          {best_loc, score_threshold, start, rd},
-         pattern_length,
-         match_distance
+         {pattern_length, match_distance}
        ) do
     score = bitap_score(d, j - 1, loc, pattern_length, match_distance)
     # This match will almost certainly be better than any existing
@@ -325,12 +387,12 @@ defmodule Dmp.Match do
       if best_loc > loc do
         # When passing loc, don't exceed our current distance from loc.
         start = max(1, 2 * loc - best_loc)
-
+        # Return a new `start` (calculation endpoint) for the update calculations.
         {:cont, {best_loc, score, start, rd}}
       else
         # Already passed loc, downhill from here on in.
-
-        {:halt, {best_loc, score, start, rd}}
+        # Return `j` in the `start` position. No more calcuations necessary.
+        {:halt, {best_loc, score, j, rd}}
       end
     else
       {:cont, {best_loc, score_threshold, start, rd}}
@@ -338,7 +400,7 @@ defmodule Dmp.Match do
   end
 
   @doc """
-  Compute and return the score for a match with e errors and x location.
+  Compute and return a weighted score for a match with `e` errors and `x` location.
 
     * `e` - Number of errors in match.
     * `x` - Location of match.
@@ -371,9 +433,9 @@ defmodule Dmp.Match do
 
   `pattern` - The text to encode.
 
-  Returns map of character locations.
+  Returns map of character locations within the pattern. $$S_c$$ in the Wu and Manber paper.
   """
-  @spec alphabet(String.t()) :: %{integer() => integer()}
+  @spec alphabet(String.t()) :: alpha()
   def alphabet(pattern) when is_binary(pattern) do
     pattern_length = String.length(pattern)
 
@@ -384,5 +446,21 @@ defmodule Dmp.Match do
       mask = 1 <<< (pattern_length - i - 1)
       Map.update(acc, ch, mask, fn val -> val ||| mask end)
     end)
+  end
+
+  # Look up a character in the alphabet and return its encoded bitmap.
+  #
+  # `s` - An alphabet constructed with `alphabet/1`.
+  # `ch` - A single character string.
+  #
+  # Returns $$S_c$$, a bitarray of positions in the `pattern` for the
+  # character `ch`.
+  @spec s_c(alpha(), String.t()) :: non_neg_integer()
+  defp s_c(_s, nil), do: 0
+  defp s_c(_s, ""), do: 0
+
+  defp s_c(s, ch) do
+    [ord | _] = String.to_charlist(ch)
+    Map.get(s, ord, 0)
   end
 end

@@ -6,6 +6,12 @@ A translation of Google's public-domain
 For information about the original Google project and its application,
 see that repository's [wiki pages](https://github.com/google/diff-match-patch/wiki).
 
+References from the Google project:
+
+* diff: [An O(ND) Difference Algorithm and Its Variations (Meyers, 1986)](http://www.xmailserver.org/diff2.pdf)
+* match: [Fast Text Searching with Errors (Wu and Manber, 1991)](http://www.club.cc.cmu.edu/~ajo/docs/agrep.pdf)
+
+
 ## Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can be installed

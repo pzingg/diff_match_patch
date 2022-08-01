@@ -3,6 +3,8 @@ defmodule Dmp.StringUtils do
   Java.String- and Javascript-compatible functions missing in Elixir's `String` module.
   """
 
+  use Bitwise, only_operators: true
+
   alias __MODULE__
 
   @doc """

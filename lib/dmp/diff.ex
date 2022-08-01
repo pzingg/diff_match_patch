@@ -273,7 +273,7 @@ defmodule Dmp.Diff do
   Find the "middle snake" of a diff, split the problem in two
   and return the recursively constructed diff.
 
-  See Myers 1986 paper: [An O(ND) Difference Algorithm and Its Variations.](http://www.xmailserver.org/diff2.pdf)
+  See: [An O(ND) Difference Algorithm and Its Variations (Meyers, 1986)](http://www.xmailserver.org/diff2.pdf)
 
     * `text1` - Old string to be diffed.
     * `text2` - New string to be diffed.

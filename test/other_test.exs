@@ -7,10 +7,12 @@ defmodule OtherTest do
   doctest Dmp.StringUtils
 
   describe "bitap scores" do
-    test "inexact match" do
-      {loc, score} = Match.bitap("abcdefghijk", "efxyhi", 1, 0.4, 100, true)
-      assert 4 == loc
-      assert_in_delta 0.36333, score, 0.00001
+    test "wu manber exact" do
+      assert 6 == Match.bitap("aabaacaabacab", "aabac", 0, 0.4, 100)
+    end
+
+    test "wu manber 1 error" do
+      assert 6 == Match.bitap("aabaacabbacab", "aabac", 6, 0.4, 100)
     end
   end
 end
