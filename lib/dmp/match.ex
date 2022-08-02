@@ -116,12 +116,13 @@ defmodule Dmp.Match do
     s = alphabet(pattern)
 
     # Initialise the bit arrays.
-    matchmask = 1 <<< (pattern_length - 1)
-    shiftmask = (1 <<< pattern_length) - 1
+    match_mask = 1 <<< (pattern_length - 1)
+    overflow_mask = (1 <<< pattern_length) - 1
     text_length = String.length(text)
 
     constants =
-      {text, pattern, loc, s, matchmask, shiftmask, text_length, pattern_length, match_distance}
+      {text, pattern, loc, s, match_mask, overflow_mask, text_length, pattern_length,
+       match_distance}
 
     # Uncomment to see the bitarray
     # debug_alphabet(pattern, s) |> Enum.join("\n") |> IO.puts
@@ -207,14 +208,14 @@ defmodule Dmp.Match do
   #   previous `d-1` error level.
   # `text_length - $$n$$ in the Wu and Manber paper.
   # `pattern_length` - $$m$$ in the Wu and Manber paper.
-  # `matchmask` - Bitmask to test the value of $$R_j+1[m]$$.
+  # `match_mask` - Bitmask to test the value of $$R_{j+1}[m]$$.
   #
   # Returns updated `best_loc`, `score_threshold`, and `max_distance`,
   # and the calculated $$R_j^d$$ bitarray from this level.
   defp search_at_error_level(
          d,
          {best_loc, score_threshold, max_distance, last_rd},
-         {text, _pattern, loc, s, matchmask, shiftmask, text_length, pattern_length,
+         {text, _pattern, loc, s, match_mask, overflow_mask, text_length, pattern_length,
           match_distance}
        ) do
     distance =
@@ -232,7 +233,9 @@ defmodule Dmp.Match do
     # for debugging we store the "size" of the array at index -1
     rd = %{(finish + 1) => (1 <<< d) - 1, -1 => finish + 2}
     acc2 = {best_loc, score_threshold, start, rd}
-    constants2 = {d, text, loc, last_rd, s, matchmask, shiftmask, pattern_length, match_distance}
+
+    constants2 =
+      {d, text, loc, last_rd, s, match_mask, overflow_mask, pattern_length, match_distance}
 
     {best_loc, score_threshold, _j, rd} =
       Enum.reduce_while(finish..0//-1, acc2, fn j, acc ->
@@ -263,16 +266,7 @@ defmodule Dmp.Match do
   # `bin_mid` - Midpoint between `bin_min` and `bin_max`
   #
   # Returns `bin_mid`, where `loc + bin_mid` has the lowest bitap score.
-  defp best_distance(
-         bin_min,
-         bin_mid,
-         _bin_max,
-         _acc
-       )
-       when bin_min >= bin_mid do
-    # Done
-    bin_mid
-  end
+  defp best_distance(bin_min, bin_mid, _, _) when bin_min >= bin_mid, do: bin_mid
 
   defp best_distance(
          bin_min,
@@ -280,9 +274,7 @@ defmodule Dmp.Match do
          bin_max,
          {d, loc, pattern_length, score_threshold, match_distance}
        ) do
-    # Loop
-    mid_loc = loc + bin_mid
-    score = bitap_score(d, mid_loc, loc, pattern_length, match_distance)
+    score = bitap_score(d, loc + bin_mid, loc, pattern_length, match_distance)
 
     {bin_min, bin_max} =
       if score <= score_threshold do
@@ -301,55 +293,104 @@ defmodule Dmp.Match do
     )
   end
 
-  # This is the heart of the bitap algorithm.
-  #
-  # Updates the `rd` bitarray for the current error level `d` at the index `j`
-  # (representing the zero-based location `j - 1` in `text`), and
-  # then tests for a match (an exact match if `d == 0` or a match with
-  # `d` errors).
-  #
-  # If a match is found, we calculate the error score (number of errors and
-  # distance from expected location) and if it's lower than the current
-  # threshold, we stop calculating the update if we have already gone
-  # below the minimum possible location, or continue the update
-  # going with a smaller range of indices.
-  defp bitap_update(
-         j,
-         {best_loc, score_threshold, start, rd},
-         _constants
-       )
-       when j < start do
+  @typedoc "Accumulator for `bitap_update/3`."
+  @type update_acc() :: {integer(), float(), non_neg_integer(), bitap_array()}
+  @typep update_constants() ::
+           {non_neg_integer(), String.t(), integer(), bitap_array(), alpha(), non_neg_integer(),
+            non_neg_integer(), non_neg_integer(), non_neg_integer()}
+
+  @doc """
+  Perform the bitap algorithm and calculate error score if a match is found.
+
+  * `acc` - Accumulator tuple, with `best_loc`, `score_threshold`, `start`, and `rd` elements.
+  * `constants` - Other constant values needed for calculations.
+
+  Updates the `rd` bitarray for the current error level `d` at the index `j`
+  (representing the zero-based location `j - 1` in `text`), and
+  then tests for a match (an exact match if `d == 0` or a match with
+  `d` errors).
+
+  If a match is found at position `j`, calculate the error score
+  (based on the error level `d` and the distance from expected location).
+  If the score is lower than the current threshold, stop calculating the update
+  if we have already gone below the minimum possible location,
+  or continue the update, limiting the range of `j` (increasing the
+  `start` value).
+
+  ## Notes
+
+  The `j` index is decremented from the end of the text to the start of the text.
+  Since the iteration is moving from high `j` to low, `bitap_update` does "Lshift"
+  operations, not the "Rshift" operations in the Wu and Manber paper, and uses
+  the previous values that were set at `j + 1`, not `j`.
+
+  Here the calculations are:
+
+  $$Rsubscptj^d = \\begin{cases}
+    Lshift [ Rsubscpt{j+1}^d ] \\text{ AND } S_c &\\text{if } d = 0 \\cr
+    Lshift [ Rsubscpt{j+1}^d ] \\text{ AND } S_c \\text{ OR } Lshift [ Rsubscptj^{d-1} \\text{ OR } Rsubscpt{j+1}^{d-1} ] \\text{ OR } Rsubscpt{j+1}^{d-1} &\\text{otherwise}
+  \\end{cases}$$
+
+  versus in Wu and Manber's paper:
+
+  $$Rsubscptj^d = \\begin{cases}
+    Rshift [ Rsubscpt{j}^d ] \\text{ AND } S_c &\\text{if } d = 0 \\cr
+    Rshift [ Rsubscpt{j}^d ] \\text{ AND } S_c \\text{ OR } Rshift [ Rsubscptj^{d-1} \\text{ OR } Rsubscpt{j+1}^{d-1} ] \\text{ OR } Rsubscpt{j}^{d-1} &\\text{otherwise}
+  \\end{cases}$$
+
+  """
+  @spec bitap_update(non_neg_integer(), update_acc(), update_constants()) ::
+          {:cont | :halt, update_acc()}
+  def bitap_update(j, acc, constants)
+
+  def bitap_update(
+        j,
+        {best_loc, score_threshold, start, rd},
+        _constants
+      )
+      when j < start do
     # Exceeded our current distance from loc. Done.
     # Return `j + 1` in the `start` position and break the iteration.
     {:halt, {best_loc, score_threshold, j + 1, rd}}
   end
 
-  defp bitap_update(
-         j,
-         {best_loc, score_threshold, start, rd},
-         {d, text, loc, last_rd, s, matchmask, shiftmask, pattern_length, match_distance}
-       ) do
+  def bitap_update(
+        j,
+        {best_loc, score_threshold, start, rd},
+        {d, text, loc, last_rd, s, match_mask, overflow_mask, pattern_length, match_distance}
+      ) do
+    # $$S_c$$
     char_match = s_c(s, String.at(text, j - 1))
 
-    rd_j_1 = Map.get(rd, j + 1, 0) |> shift_left(shiftmask)
-    rd_j_1 = rd_j_1 &&& char_match
+    # Perform shift-OR update
+
+    # $$Lshift[R_{j+1}^d] AND S_c$$
+    shift_d_and_s_c = (Map.get(rd, j + 1, 0) <<< 1 ||| 1) &&& char_match
 
     rd_j =
       if d == 0 do
         # First pass: exact match.
-        rd_j_1
+        shift_d_and_s_c
       else
         # Subsequent passes: fuzzy match.
-        last_rd_j_1 = Map.get(last_rd, j + 1, 0)
-        last_rd_j = Map.get(last_rd, j, 0)
-        last_rd_j = (last_rd_j ||| last_rd_j_1) |> shift_left(shiftmask)
-        rd_j_1 ||| last_rd_j ||| last_rd_j_1
+        # $$R_{j+1}^{d-1}$$
+        rd_d1_j1 = Map.get(last_rd, j + 1, 0)
+        # $$R_j^{d-1}$$
+        rd_d1_j = Map.get(last_rd, j, 0)
+
+        # Restrict shifted values to pattern_length with $$AND overflow_mask$$
+        # $$Lshift[R_j^{d-1} OR R_{j+1}^{d-1}]$$
+        shift_d1 = ((rd_d1_j ||| rd_d1_j1) <<< 1 ||| 1) &&& overflow_mask
+
+        # $$Lshift[R_{j+1}^d] AND S_c OR Lshift[R_j^{d-1} OR R_{j+1}^{d-1}] OR R_{j+1}^{d-1}$$
+        shift_d_and_s_c ||| shift_d1 ||| rd_d1_j1
       end
 
     # Update mask array
     rd = Map.put(rd, j, rd_j)
 
-    if (rd_j &&& matchmask) != 0 do
+    # Test for a match: $$if Rd_j+1[m] = 1$$
+    if (rd_j &&& match_mask) != 0 do
       # Found a match
       test_score_at_match(
         d,
@@ -361,11 +402,6 @@ defmodule Dmp.Match do
     else
       {:cont, {best_loc, score_threshold, start, rd}}
     end
-  end
-
-  # Keep values during shifts from overflowing by ANDing with `shiftmask`
-  defp shift_left(val, shiftmask) do
-    (val <<< 1 &&& shiftmask) ||| 1
   end
 
   # We found a match during `bitap_update/3`. Verify

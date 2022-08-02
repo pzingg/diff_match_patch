@@ -1,13 +1,19 @@
 defmodule Dmp.MixProject do
   use Mix.Project
 
+  @version "0.1.0"
+  @github_project_url "https://github.com/pzingg/diff_match_patch"
+
   def project do
     [
       app: :diff_match_patch,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
+      source_url: @github_project_url,
+      hompepage_url: @github_project_url,
       deps: deps(),
+      package: package(),
       docs: docs()
     ]
   end
@@ -19,16 +25,25 @@ defmodule Dmp.MixProject do
     ]
   end
 
+  defp package do
+    [
+      licenses: "Apache-2.0",
+      links: %{"GitHub" => @github_project_url}
+    ]
+  end
+
   # Load KaTeX JavaScript to docs for math expressions
   defp docs do
     [
-      main: "Diff Match Patch",
       authors: ["Peter Zingg <peter.zingg@gmail.com>"],
       assets: "priv/assets",
-      javascript_config_path: "priv/assets/docs_config.js",
+      javascript_config_path: "assets/docs_config.js",
+      extras: ["README.md": [filename: "readme", title: "Diff Match Patch"]],
+      main: "readme",
       # You can specify a function for adding
       # custom content to the generated HTML.
       # This is useful for custom JS/CSS files you want to include.
+      before_closing_head_tag: &before_closing_head_tag/1,
       before_closing_body_tag: &before_closing_body_tag/1
     ]
   end
@@ -38,18 +53,34 @@ defmodule Dmp.MixProject do
   # Once loaded, the script will dynamically render all LaTeX
   # expressions on the page in place.
   # For more details and options see https://katex.org/docs/autorender.html
+  defp before_closing_head_tag(:html) do
+    """
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.js" integrity="sha384-I2b1Pcl48X93GxEkGkaMo1hrd6n+IX8H2wgSsMimGbkZoGTve/87h1FjaDNvlpQi" crossorigin="anonymous"></script>
+    <script defer src="assets/auto-render.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css" integrity="sha384-Xi8rHCmBmhbuyyhbI88391ZKP2dmfnOl4rT9ZfRI7mLTdk1wblIUnrIq35nqwEvC" crossorigin="anonymous">
+    <link rel="stylesheet" href="assets/docs.css">
+    """
+  end
+
+  defp before_closing_head_tag(_), do: ""
+
+  # The `sbMacro` function is a workaround to the problem that
+  # two underscores in Markdown are processed before KaTeX can
+  # see them.
   defp before_closing_body_tag(:html) do
     """
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css" integrity="sha384-Xi8rHCmBmhbuyyhbI88391ZKP2dmfnOl4rT9ZfRI7mLTdk1wblIUnrIq35nqwEvC" crossorigin="anonymous"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.js" integrity="sha384-X/XCfMm41VSsqRNQgDerQczD69XqmjOOOwYQvr/uuC+j4OPoNhVgjdGFwhvN02Ja" crossorigin="anonymous"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/contrib/auto-render.min.js" integrity="sha384-+XBljXPPiv+OzfbB3cVmLHf4hdUFHlWNZN5spNQ7rmHTXpd7WvJum6fIACpNNfIR" crossorigin="anonymous"></script>
-
     <script>
-      document.addEventListener("DOMContentLoaded", function() {
+      const sbMacro = function(text) {
+        return text.replace(/subscpt/g, '_');
+      };
+
+      document.addEventListener('DOMContentLoaded', function() {
         renderMathInElement(document.body, {
+          fleqn: true,
+          preProcess: sbMacro,
           delimiters: [
-            { left: "$$", right: "$$", display: true },
-            { left: "$", right: "$", display: false },
+            { left: '$$', right: '$$', display: true },
+            { left: '$', right: '$', display: false },
           ]
         });
       });
