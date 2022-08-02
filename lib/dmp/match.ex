@@ -7,7 +7,7 @@ defmodule Dmp.Match do
   use Bitwise, only_operators: true
 
   import Dmp.StringUtils
-  # import Dmp.DebugUtils
+  import Dmp.DebugUtils
 
   alias Dmp.Options
 
@@ -123,7 +123,8 @@ defmodule Dmp.Match do
     constants =
       {text, pattern, loc, s, matchmask, shiftmask, text_length, pattern_length, match_distance}
 
-    # debug_alphabet(pattern, s)
+    # Uncomment to see the bitarray
+    # debug_alphabet(pattern, s) |> Enum.join("\n") |> IO.puts
 
     # Start with `max_distance = text_length + pattern_length`
     # and the $$R_j^0$$ array all zero (empty map).
@@ -243,7 +244,8 @@ defmodule Dmp.Match do
     # that level.
     d1_score = bitap_score(d + 1, loc, loc, pattern_length, match_distance)
 
-    # debug_rd(text, pattern, d, rd, j, best_loc)
+    # Uncomment to see the bitarray
+    # debug_rd(text, pattern, d, rd, j, best_loc) |> Enum.join("\n") |> IO.puts
 
     if d1_score > score_threshold do
       # No hope for a (better) match at greater error levels.

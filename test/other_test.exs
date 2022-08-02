@@ -1,8 +1,9 @@
 defmodule OtherTest do
   use ExUnit.Case
 
-  alias Dmp.{Match, Options, StringUtils}
+  alias Dmp.{DebugUtils, Match, Options, StringUtils}
 
+  doctest Dmp.DebugUtils
   doctest Dmp.Options
   doctest Dmp.StringUtils
 

@@ -6,23 +6,33 @@ defmodule Dmp.DebugUtils do
   use Bitwise, only_operators: true
 
   @doc """
-  Prints the `alphabet` bitarray on IO, showing binary values.
+  Formats the `alphabet` bitarray into a list of lines, showing binary values.
+
+  ## Examples
+
+      iex> DebugUtils.debug_alphabet("aba", %{?a => 5, ?b => 2})
+      [
+        "          alphabet: a b a",
+        "    a            5: 1 0 1",
+        "    b            2: 0 1 0"
+      ]
+
   """
-  @spec debug_alphabet(String.t(), Dmp.Match.alpha()) :: nil
+  @spec debug_alphabet(String.t(), Dmp.Match.alpha()) :: [String.t()]
   def debug_alphabet(pattern, s) do
-    alphabet_header(pattern) |> IO.puts()
     pattern_length = String.length(pattern)
 
-    String.codepoints(pattern)
-    |> Enum.sort()
-    |> Enum.dedup()
-    |> Enum.map(fn ch -> alphabet_line(ch, s, pattern_length) |> IO.puts() end)
+    data =
+      String.codepoints(pattern)
+      |> Enum.sort()
+      |> Enum.dedup()
+      |> Enum.map(fn ch -> alphabet_line(ch, s, pattern_length) end)
 
-    nil
+    [alphabet_header(pattern) | data]
   end
 
   defp alphabet_header(pattern) do
-    line = ["\n          alphabet:" | String.codepoints(pattern)]
+    line = ["          alphabet:" | String.codepoints(pattern)]
     Enum.join(line, " ")
   end
 
@@ -36,11 +46,24 @@ defmodule Dmp.DebugUtils do
   end
 
   @doc """
-  Prints the `rd` bitarray on IO, showing binary values.
+  Formats the `rd` bitarray into a list of lines, showing binary values.
 
   * `d` - Error level for the bitarray.
   * `start` - Lowest index that has been calculated.
   * `best_loc` - Index in the text where the best match has been found.
+
+  ## Examples
+
+      iex> DebugUtils.debug_rd("abc", "add", 0, %{1 => 5, 2 => 7, -1 => 3}, 1, 2)
+      [
+        "rd_j^0     pattern: a d d",
+        " 0* _            0: 0 0 0",
+        " 1  a            5: 1 0 1",
+        " 2  b            7: 1 1 1",
+        " 3@ c            0: 0 0 0",
+        " 4  _            0: 0 0 0"
+      ]
+
   """
   @spec debug_rd(
           String.t(),
@@ -49,24 +72,24 @@ defmodule Dmp.DebugUtils do
           Dmp.Match.bitap_array(),
           non_neg_integer(),
           integer()
-        ) :: nil
+        ) :: [String.t()]
   def debug_rd(text, pattern, d, rd, start \\ 0, best_loc \\ -1) do
-    rd_size = max(String.length(text) + 2, Map.fetch!(rd, -1))
-    rd_header(d, pattern) |> IO.puts()
     pattern_length = String.length(pattern)
+    rd_size = max(String.length(text) + 2, Map.fetch!(rd, -1))
 
-    Enum.map(0..(rd_size - 1), fn j ->
-      ch =
-        if j == 0 do
-          nil
-        else
-          String.at(text, j - 1)
-        end
+    data =
+      Enum.map(0..(rd_size - 1), fn j ->
+        ch =
+          if j == 0 do
+            nil
+          else
+            String.at(text, j - 1)
+          end
 
-      rd_j_line(ch, j, rd, pattern_length, start, best_loc) |> IO.puts()
-    end)
+        rd_j_line(ch, j, rd, pattern_length, start, best_loc)
+      end)
 
-    nil
+    [rd_header(d, pattern) | data]
   end
 
   defp rd_header(d, pattern) do
