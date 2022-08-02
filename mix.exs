@@ -20,7 +20,7 @@ defmodule Dmp.MixProject do
   end
 
   # Load KaTeX JavaScript to docs for math expressions
-  def docs do
+  defp docs do
     [
       main: "Diff Match Patch",
       authors: ["Peter Zingg <peter.zingg@gmail.com>"],

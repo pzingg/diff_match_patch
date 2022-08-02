@@ -451,10 +451,10 @@ defmodule Dmp.Patch do
   as an array of true/false values indicating which patches were applied.
 
     * `patches` - A patchlist.
-    * `text` - Old text.
+    * `text` - Text to apply patch to.
     * `opts` - A options keyword list, `[]` to use the default options.
 
-  Returns a tuple with two elements: the new text, and a list of
+  Returns a tuple with two elements: the patched text, and a list of
   boolean values. Each boolean corresponds to a patch in the patchlist,
   and is `true` if a match was found for the corresponding patch.
   """
@@ -635,6 +635,7 @@ defmodule Dmp.Patch do
 
   @doc """
   Add some padding on text start and end so that edges can match something.
+
   Intended to be called only from within `Patch.apply`.
 
     * `patches` - A patchlist..

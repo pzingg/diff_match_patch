@@ -221,6 +221,7 @@ defmodule PatchTest do
       assert diffs == patch_diffs
     end
 
+    @tag :match_max_32
     test "long string with repeats" do
       text1 = repeats()
       text2 = text1 <> "123"
@@ -241,10 +242,28 @@ defmodule PatchTest do
         )
 
       patches = Patch.split_max(patches, 4)
-      assert patches != []
 
       assert "@@ -1,32 +1,46 @@\n+X\n ab\n+X\n cd\n+X\n ef\n+X\n gh\n+X\n ij\n+X\n kl\n+X\n mn\n+X\n op\n+X\n qr\n+X\n st\n+X\n uv\n+X\n wx\n+X\n yz\n+X\n 012345\n@@ -25,13 +39,18 @@\n zX01\n+X\n 23\n+X\n 45\n+X\n 67\n+X\n 89\n+X\n 0\n" ==
                Patch.to_text(patches)
+    end
+
+    test "example 1, no splitting" do
+      opts = [match_max_bits: 0]
+
+      patches =
+        Patch.make(
+          "abcdefghijklmnopqrstuvwxyz01234567890",
+          "XabXcdXefXghXijXklXmnXopXqrXstXuvXwxXyzX01X23X45X67X89X0",
+          opts
+        )
+
+      unsplit =
+        "@@ -1,37 +1,56 @@\n+X\n ab\n+X\n cd\n+X\n ef\n+X\n gh\n+X\n ij\n+X\n kl\n+X\n mn\n+X\n op\n+X\n qr\n+X\n st\n+X\n uv\n+X\n wx\n+X\n yz\n+X\n 01\n+X\n 23\n+X\n 45\n+X\n 67\n+X\n 89\n+X\n 0\n"
+
+      assert unsplit == Patch.to_text(patches)
+
+      patches = Patch.split_max(patches, 4, opts)
+      assert unsplit == Patch.to_text(patches)
     end
 
     test "example 2" do
@@ -272,7 +291,8 @@ defmodule PatchTest do
                Patch.to_text(patches)
     end
 
-    test "example 4" do
+    @tag :match_max_32
+    test "example 4, 32 bits" do
       patches =
         Patch.make(
           "abcdefghij , h : 0 , t : 1 abcdefghij , h : 0 , t : 1 abcdefghij , h : 0 , t : 1",
@@ -283,6 +303,60 @@ defmodule PatchTest do
 
       assert "@@ -2,32 +2,32 @@\n bcdefghij , h : \n-0\n+1\n  , t : 1 abcdef\n@@ -29,32 +29,32 @@\n bcdefghij , h : \n-0\n+1\n  , t : 1 abcdef\n" ==
                Patch.to_text(patches)
+    end
+
+    @tag :match_max_64
+    test "example 4, 64 bits" do
+      text1 = "abcdefghij , h : 0 , t : 1 abcdefghij , h : 0 , t : 1 abcdefghij , h : 0 , t : 1"
+      text2 = "abcdefghij , h : 1 , t : 1 abcdefghij , h : 1 , t : 1 abcdefghij , h : 0 , t : 1"
+      # text1, with only the first patch applied
+      expected3 =
+        "abcdefghij , h : 1 , t : 1 abcdefghij , h : 0 , t : 1 abcdefghij , h : 0 , t : 1"
+
+      patches_32 = Patch.make(text1, text2)
+
+      assert "@@ -2,33 +2,33 @@\n bcdefghij , h : \n-0\n+1\n  , t : 1 abcdefg\n@@ -29,33 +29,33 @@\n bcdefghij , h : \n-0\n+1\n  , t : 1 abcdefg\n" ==
+               Patch.to_text(patches_32)
+
+      # Only apply the first patch
+      {text3, _} = patches_32 |> Enum.take(1) |> Patch.apply(text1)
+      # Only the first "h : 0" was changed
+      assert expected3 == text3
+
+      # Then apply the second patch
+      {text4, _} = patches_32 |> Enum.drop(1) |> Patch.apply(text3)
+      assert text2 == text4
+
+      patches_32 = Patch.split_max(patches_32, 4)
+      # After splitting, the patches are slightly different
+      assert "@@ -2,32 +2,32 @@\n bcdefghij , h : \n-0\n+1\n  , t : 1 abcdef\n@@ -29,32 +29,32 @@\n bcdefghij , h : \n-0\n+1\n  , t : 1 abcdef\n" ==
+               Patch.to_text(patches_32)
+
+      {text3, _} = Patch.apply(patches_32, text1)
+      assert text2 == text3
+
+      opts_64 = [match_max_bits: 64]
+      patches_64 = Patch.make(text1, text2, opts_64)
+      # The patches are different than the 32-bit case
+      assert "@@ -1,58 +1,58 @@\n abcdefghij , h : \n-0\n+1\n  , t : 1 abcdefghij , h : 0 , t : 1 abcd\n@@ -29,33 +29,33 @@\n bcdefghij , h : \n-0\n+1\n  , t : 1 abcdefg\n" ==
+               Patch.to_text(patches_64)
+
+      # Only apply the first patch
+      {text3, _} = patches_64 |> Enum.take(1) |> Patch.apply(text1)
+      # Only the first "h : 0" was changed
+      assert expected3 == text3
+
+      # Then apply the second patch
+      {text4, _} = patches_64 |> Enum.drop(1) |> Patch.apply(text3)
+      assert text2 == text4
+
+      patches_64 = Patch.split_max(patches_64, 4, opts_64)
+      # split_max has no effect
+      assert "@@ -1,58 +1,58 @@\n abcdefghij , h : \n-0\n+1\n  , t : 1 abcdefghij , h : 0 , t : 1 abcd\n@@ -29,33 +29,33 @@\n bcdefghij , h : \n-0\n+1\n  , t : 1 abcdefg\n" ==
+               Patch.to_text(patches_64)
+
+      {text3, _} = Patch.apply(patches_64, text1)
+      assert text2 == text3
     end
   end
 
@@ -337,6 +411,7 @@ defmodule PatchTest do
       assert {"I am the very model of a modern major general.", [false, false]} == results
     end
 
+    @tag :match_max_32
     test "big delete, small change" do
       patches =
         Patch.make(
@@ -353,6 +428,7 @@ defmodule PatchTest do
       assert {"xabcy", [true, true]} == results
     end
 
+    @tag :match_max_32
     test "big delete, big change 1" do
       patches =
         Patch.make(
@@ -370,6 +446,7 @@ defmodule PatchTest do
               [false, true]} == results
     end
 
+    @tag :match_max_32
     test "big delete, big change 2" do
       patches =
         Patch.make(
@@ -415,6 +492,7 @@ defmodule PatchTest do
       assert {"test", [true]} == results
     end
 
+    @tag :match_max_32
     test "no side effects with major delete" do
       patches = Patch.make("The quick brown fox jumps over the lazy dog.", "Woof")
       patchstr = Patch.to_text(patches)

@@ -5,6 +5,11 @@ defmodule Dmp.Options do
     * `:diff_timeout` - Number of seconds to map a diff before giving up (0 for infinity).
     * `:diff_edit_cost` - Cost of an empty edit operation in terms of edit characters.
     * `:match_max_bits` - The number of bits in an integer (default is expected 32).
+      This parameter controls the lengths of patterns used in matching and patch splitting.
+      Set `:match_max_bits` to 0 to disable patch splitting. To avoid long patches in
+      certain pathological cases, use 32.  Elixir supports arbitrarily large integers,
+      so we allow values of 64 and 128, as well as smaller values. Multiple short patches
+      (using native ints, `:match_max_bits` of 32 or less) should be much faster than long ones.
     * `:match_threshold` - At what point is no match declared (0.0 = perfection, 1.0 = very loose).
     * `:match_distance` - How far to search for a match (0 = exact location, 1000+ = broad match).
       A match this many characters away from the expected location will add
@@ -13,7 +18,7 @@ defmodule Dmp.Options do
       the contents have to be to match the expected contents. (0.0 = perfection,
       1.0 = very loose).  Note that `:match_threshold` controls how closely the
       end points of a delete need to match.
-    * `:patch_margin` - Chunk size for context length.
+    * `:patch_margin` - Chunk size for context length. 4 is a good value.
   """
 
   alias __MODULE__
@@ -105,7 +110,7 @@ defmodule Dmp.Options do
   end
 
   defp valid_match_max_bits?(match_max_bits) do
-    match_max_bits > 0 && match_max_bits <= 128
+    Enum.member?([0, 8, 16, 32, 64, 128], match_max_bits)
   end
 
   defp valid_threshold?(value) do
@@ -173,12 +178,9 @@ defmodule Dmp.Options do
   end
 
   defp validate_patch_margin({opts, errors}) do
-    match_max_bits = Keyword.fetch!(opts, :match_max_bits)
     patch_margin = Keyword.fetch!(opts, :patch_margin)
 
-    if patch_margin >= 0 &&
-         (!valid_match_max_bits?(match_max_bits) ||
-            patch_margin < match_max_bits) do
+    if patch_margin >= 0 do
       {opts, errors}
     else
       {opts, [{"patch_margin", patch_margin} | errors]}
