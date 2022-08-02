@@ -10,9 +10,10 @@ defmodule Dmp.MixProject do
       version: @version,
       elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
+      deps: deps(),
       source_url: @github_project_url,
       hompepage_url: @github_project_url,
-      deps: deps(),
+      description: description(),
       package: package(),
       docs: docs()
     ]
@@ -25,9 +26,15 @@ defmodule Dmp.MixProject do
     ]
   end
 
+  defp description do
+    """
+    An Elixir implementation of the Google diff_match_patch library.
+    """
+  end
+
   defp package do
     [
-      licenses: "Apache-2.0",
+      licenses: ["Apache-2.0"],
       links: %{"GitHub" => @github_project_url}
     ]
   end
