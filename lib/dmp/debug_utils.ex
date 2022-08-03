@@ -5,6 +5,8 @@ defmodule Dmp.DebugUtils do
 
   use Bitwise, only_operators: true
 
+  @smallint_len 14
+
   @doc """
   Formats the `alphabet` bitarray into a list of lines, showing binary values.
 
@@ -12,34 +14,36 @@ defmodule Dmp.DebugUtils do
 
       iex> DebugUtils.debug_alphabet("aba", %{?a => 5, ?b => 2})
       [
-        "          alphabet: a b a",
-        "    a            5: 1 0 1",
-        "    b            2: 0 1 0"
+        "alphabet: a b a",
+        "    a  5: 1 0 1",
+        "    b  2: 0 1 0"
       ]
 
   """
   @spec debug_alphabet(String.t(), Dmp.Match.alpha()) :: [String.t()]
   def debug_alphabet(pattern, s) do
     pattern_length = String.length(pattern)
+    int_len = value_size(pattern_length)
 
     data =
       String.codepoints(pattern)
       |> Enum.sort()
       |> Enum.dedup()
-      |> Enum.map(fn ch -> alphabet_line(ch, s, pattern_length) end)
+      |> Enum.map(fn ch -> alphabet_line(ch, s, pattern_length, int_len) end)
 
-    [alphabet_header(pattern) | data]
+    [alphabet_header(pattern, int_len) | data]
   end
 
-  defp alphabet_header(pattern) do
-    line = ["          alphabet:" | String.codepoints(pattern)]
+  defp alphabet_header(pattern, int_len) do
+    label = String.pad_leading("alphabet:", int_len + 7)
+    line = [label | String.codepoints(pattern)]
     Enum.join(line, " ")
   end
 
-  defp alphabet_line(ch, s, pattern_length) do
+  defp alphabet_line(ch, s, pattern_length, int_len) do
     ord = String.to_charlist(ch) |> List.first()
     value = Map.get(s, ord, 0)
-    valstr = to_string(value) |> String.pad_leading(12)
+    valstr = format_int(value, int_len)
     bits = bitmap_to_list(value, pattern_length)
     line = ["   ", ch, valstr <> ":"] ++ bits
     Enum.join(line, " ")
@@ -56,12 +60,12 @@ defmodule Dmp.DebugUtils do
 
       iex> DebugUtils.debug_rd("abc", "add", 0, %{1 => 5, 2 => 7, -1 => 3}, 1, 2)
       [
-        "rd_j^0     pattern: a d d",
-        " 0* _            0: 0 0 0",
-        " 1  a            5: 1 0 1",
-        " 2  b            7: 1 1 1",
-        " 3@ c            0: 0 0 0",
-        " 4  _            0: 0 0 0"
+        "  rd_j^0: a d d",
+        " 0* _  0: 0 0 0",
+        " 1  a  5: 1 0 1",
+        " 2  b  7: 1 1 1",
+        " 3@ c  0: 0 0 0",
+        " 4  _  0: 0 0 0"
       ]
 
   """
@@ -75,6 +79,7 @@ defmodule Dmp.DebugUtils do
         ) :: [String.t()]
   def debug_rd(text, pattern, d, rd, start \\ 0, best_loc \\ -1) do
     pattern_length = String.length(pattern)
+    int_len = value_size(pattern_length)
     rd_size = max(String.length(text) + 2, Map.fetch!(rd, -1))
 
     data =
@@ -86,25 +91,25 @@ defmodule Dmp.DebugUtils do
             String.at(text, j - 1)
           end
 
-        rd_j_line(ch, j, rd, pattern_length, start, best_loc)
+        rd_j_line(ch, j, rd, pattern_length, int_len, start, best_loc)
       end)
 
-    [rd_header(d, pattern) | data]
+    [rd_header(d, pattern, int_len) | data]
   end
 
-  defp rd_header(d, pattern) do
-    dstr = "rd_j^#{d}" |> String.pad_trailing(7)
-    line = ["#{dstr}    pattern:" | String.codepoints(pattern)]
+  defp rd_header(d, pattern, int_len) do
+    label = "rd_j^#{d}:" |> String.pad_leading(int_len + 7)
+    line = [label | String.codepoints(pattern)]
     Enum.join(line, " ")
   end
 
-  defp rd_j_line(nil, j, rd, pattern_length, start, best_loc) do
-    rd_j_line("_", j, rd, pattern_length, start, best_loc)
+  defp rd_j_line(nil, j, rd, pattern_length, int_len, start, best_loc) do
+    rd_j_line("_", j, rd, pattern_length, int_len, start, best_loc)
   end
 
-  defp rd_j_line(ch, j, rd, pattern_length, start, best_loc) do
+  defp rd_j_line(ch, j, rd, pattern_length, int_len, start, best_loc) do
     value = Map.get(rd, j, 0)
-    valstr = to_string(value) |> String.pad_leading(12)
+    valstr = format_int(value, int_len)
     jstr = to_string(j) |> String.pad_leading(2)
 
     jstr =
@@ -122,6 +127,22 @@ defmodule Dmp.DebugUtils do
     bits = bitmap_to_list(value, pattern_length)
     line = [jstr, ch, valstr <> ":"] ++ bits
     Enum.join(line, " ")
+  end
+
+  defp value_size(pattern_length) do
+    largest_bitmap = (1 <<< pattern_length) - 1
+    len = to_string(largest_bitmap) |> String.length()
+    min(14, max(len, 2))
+  end
+
+  defp format_int(value, max_len) do
+    valstr = to_string(value) |> String.pad_leading(max_len)
+
+    if String.length(valstr) > max_len do
+      String.pad_leading("<>", max_len)
+    else
+      valstr
+    end
   end
 
   @doc """

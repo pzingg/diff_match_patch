@@ -75,7 +75,7 @@ defmodule MatchTest do
     test "multiple select 2 with more results" do
       {best_loc, errors, score} = Match.bitap("abcdexyzabcde", "abccde", 5, 0.5, 100, true)
       assert {8, 1} == {best_loc, errors}
-      assert_in_delta 0.1967, score, 0.0001
+      assert_in_delta score, 0.1967, 0.0001
     end
 
     test "multiple select loop" do
@@ -95,7 +95,7 @@ defmodule MatchTest do
         Match.bitap("abcdefghijklmnopqrstuvwxyz", "abcdefg", 24, 0.5, 10, true)
 
       assert {-1, 3} == {best_loc, errors}
-      assert_in_delta 1.0, score, 0.0001
+      assert_in_delta score, 1.0, 0.0001
     end
 
     test "strict distance 2" do
@@ -104,7 +104,7 @@ defmodule MatchTest do
         Match.bitap("abcdefghijklmnopqrstuvwxyz", "abcdxxefg", 1, 0.5, 10, true)
 
       assert {0, 2} == {best_loc, errors}
-      assert_in_delta 0.3222, score, 0.0001
+      assert_in_delta score, 0.3222, 0.0001
     end
 
     test "loose distance" do

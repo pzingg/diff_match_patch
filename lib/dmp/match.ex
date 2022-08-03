@@ -34,6 +34,8 @@ defmodule Dmp.Match do
     * `pattern` - The pattern to search for.
     * `loc` - The location to search around.
     * `opts` - A options keyword list, `[]` to use the default options.
+      In addition to the general parameters, the option `:more_results`,
+      if set to `true`, can be used to return more data. See `bitap/6`.
 
   Returns -1 if no match found.
   """
@@ -66,7 +68,8 @@ defmodule Dmp.Match do
           pattern,
           loc,
           Keyword.fetch!(opts, :match_threshold),
-          Keyword.fetch!(opts, :match_distance)
+          Keyword.fetch!(opts, :match_distance),
+          Keyword.get(opts, :more_results, false)
         )
     end
   end
@@ -79,22 +82,22 @@ defmodule Dmp.Match do
 
     * `text` - The text to search.
     * `pattern` - The pattern to search for.
-    * `loc` - The location to search around.
+    * `loc` - The location (zero-based index in `text`) to search around.
     * `match_threshold` - At what point is no match declared
       (0.0 = perfection, 1.0 = very loose, default = 0.5).
     * `match_distance` - How far to search for a match (0 = exact location,
       1000+ = broad match, default = 1000).
-    * `more_results` - Control what is returned. See the following.
+    * `more_results` - Control which data is returned.
 
   If `more_results` is false (the default), returns the index of the best
     match closest to `loc` in `text`, or -1 if no suitable match was found.
 
   If `more_results` is true, returns a tuple with three elements:
-    * The best match index, or -1.
+    * The best match index in `text`, or -1 if no suitable match was found.
     * The highest error level `d` that was searched.
     * The adjusted match score at the returned index (a value less than
       or equal to the `match_threshold`). If no match was found,
-      the score is 1.
+      the score is 1.0.
   """
   @spec bitap(String.t(), String.t(), non_neg_integer(), float(), non_neg_integer(), boolean()) ::
           integer()
@@ -294,11 +297,32 @@ defmodule Dmp.Match do
     )
   end
 
-  @typedoc "Accumulator for `bitap_update/3`."
+  @typedoc """
+  Accumulator for `bitap_update/3`. A tuple with these elements:
+
+  * `best_loc` - The value of `loc` with the lowest score found so far.
+  * `score` - The lowest score found so far.
+  * `start` - The lowest value of `j` that will be searched.
+  * `rd` - The bitarray being calculated at the current error level `d`.
+  """
   @type update_acc() :: {integer(), float(), non_neg_integer(), bitap_array()}
-  @typep update_constants() ::
-           {non_neg_integer(), String.t(), integer(), bitap_array(), alpha(), non_neg_integer(),
-            non_neg_integer(), non_neg_integer(), non_neg_integer()}
+
+  @typedoc """
+  Constants needed for `bitap_update/3`. A tuple with these elements:
+
+  * `d` - Current error level.
+  * `text` - Text to search.
+  * `loc` -  The location (zero-based index in `text`) to search around.
+  * `last_rd` - The bitarray from error level `d - 1`
+  * `s` - The alphabet constructed from pattern being matched (see `alphabet/1`).
+  * `match_mask` - A bitmap from the alphabet for the character at `loc` in `text`.
+  * `overflow_mask` - A bitmap of all ones, of size `pattern_length`
+  * `pattern_length` - The length of the pattern being matched.
+  * `match_distance` - How far from `loc` that the search will be conducted.
+  """
+  @type update_constants() ::
+          {non_neg_integer(), String.t(), integer(), bitap_array(), alpha(), non_neg_integer(),
+           non_neg_integer(), non_neg_integer(), non_neg_integer()}
 
   @doc """
   Perform the bitap algorithm and calculate error score if a match is found.
@@ -470,10 +494,14 @@ defmodule Dmp.Match do
 
   `pattern` - The text to encode.
 
-  Returns map of character locations within the pattern.
-  In the Wu and Manber paper, this is:
+  Returns the map of character locations within the pattern.
+  From the Wu and Manber paper:
 
-  $$S$$
+  $$\\text{If } s\\xsb{i} .. s\\xsb{\\Sigma} \\text{ are the unique characters in the pattern,}$$
+  $$\\text{and } p\\xsb{1} .. p\\xsb{m} \\text{ are the characters in the search pattern, then}$$
+  $$S \\text{ is the bitarray where } S\\xsb{i}[r] = 1 \\text{ if } p\\xsb{r} = s\\xsb{i}$$
+
+  For best results the number of characters in `pattern` should less than or equal to the native bit size of an integer (32).
   """
   @spec alphabet(String.t()) :: alpha()
   def alphabet(pattern) when is_binary(pattern) do
