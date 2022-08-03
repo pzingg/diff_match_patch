@@ -73,12 +73,12 @@ defmodule Dmp.MixProject do
 
   # The `sbMacro` function is a workaround to the problem that
   # two underscores in Markdown are processed before KaTeX can
-  # see them.
+  # see them. We can't use "\sb{expr}".
   defp before_closing_body_tag(:html) do
     """
     <script>
       const sbMacro = function(text) {
-        return text.replace(/subscpt/g, '_');
+        return text.replace(/\\\\xsb/g, '_');
       };
 
       document.addEventListener('DOMContentLoaded', function() {

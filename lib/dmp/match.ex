@@ -84,13 +84,14 @@ defmodule Dmp.Match do
       (0.0 = perfection, 1.0 = very loose, default = 0.5).
     * `match_distance` - How far to search for a match (0 = exact location,
       1000+ = broad match, default = 1000).
-    * `return_score` - Control what is returned. See the following.
+    * `more_results` - Control what is returned. See the following.
 
-  If `return_score` is false (the default), returns the index of the best
+  If `more_results` is false (the default), returns the index of the best
     match closest to `loc` in `text`, or -1 if no suitable match was found.
 
-  If `return_score` is true, returns a tuple with two elements:
+  If `more_results` is true, returns a tuple with three elements:
     * The best match index, or -1.
+    * The highest error level `d` that was searched.
     * The adjusted match score at the returned index (a value less than
       or equal to the `match_threshold`). If no match was found,
       the score is 1.
@@ -103,7 +104,7 @@ defmodule Dmp.Match do
         loc,
         match_threshold \\ 0.5,
         match_distance \\ 1000,
-        return_score \\ false
+        more_results \\ false
       ) do
     pattern_length = String.length(pattern)
 
@@ -128,22 +129,22 @@ defmodule Dmp.Match do
     # debug_alphabet(pattern, s) |> Enum.join("\n") |> IO.puts
 
     # Start with `max_distance = text_length + pattern_length`
-    # and the $$R_j^0$$ array all zero (empty map).
+    # and the $$R_{j}^0$$ array all zero (empty map).
     max_distance = text_length + pattern_length
     rd_0 = %{}
-    acc = {best_loc, score_threshold, max_distance, rd_0}
+    acc = {best_loc, score_threshold, max_distance, rd_0, -1}
 
     # Iterate over possible error levels
-    {best_loc, score, _max_distance, _rd} =
+    {best_loc, score, _max_distance, _rd, last_d} =
       Enum.reduce_while(0..(pattern_length - 1), acc, fn d, acc ->
         search_at_error_level(d, acc, constants)
       end)
 
-    if return_score do
+    if more_results do
       if best_loc == -1 do
-        {-1, 1.0}
+        {-1, last_d, 1.0}
       else
-        {best_loc, score}
+        {best_loc, last_d, score}
       end
     else
       best_loc
@@ -191,7 +192,7 @@ defmodule Dmp.Match do
   # At each error level:
   #   1. Run a binary search to determine how far from 'loc' we can stray at
   #      this error level (`best_distance`)
-  #   2. Update the bitarray $$R_j^d$$ for this error level and check
+  #   2. Update the bitarray $$R_{j}^d$$ for this error level and check
   #      for a pattern match.  Return the location of the best match.
   #   3. Check to see if there might be a better score at a higher error level.
   #
@@ -204,17 +205,17 @@ defmodule Dmp.Match do
   # `max_distance` - The highest distance from `loc` to search within.
   #   Starts at `text_length + pattern_length` and gets smaller after
   #   each iteration.
-  # `last_rd` - $$R_j^{d-1}$$ in the Wu and Manber paper. Bitarray from the
+  # `last_rd` - $$R_{j}^{d-1}$$ in the Wu and Manber paper. Bitarray from the
   #   previous `d-1` error level.
   # `text_length - $$n$$ in the Wu and Manber paper.
   # `pattern_length` - $$m$$ in the Wu and Manber paper.
   # `match_mask` - Bitmask to test the value of $$R_{j+1}[m]$$.
   #
   # Returns updated `best_loc`, `score_threshold`, and `max_distance`,
-  # and the calculated $$R_j^d$$ bitarray from this level.
+  # and the calculated $$R_{j}^d$$ bitarray from this level.
   defp search_at_error_level(
          d,
-         {best_loc, score_threshold, max_distance, last_rd},
+         {best_loc, score_threshold, max_distance, last_rd, _last_d},
          {text, _pattern, loc, s, match_mask, overflow_mask, text_length, pattern_length,
           match_distance}
        ) do
@@ -252,9 +253,9 @@ defmodule Dmp.Match do
 
     if d1_score > score_threshold do
       # No hope for a (better) match at greater error levels.
-      {:halt, {best_loc, score_threshold, distance, rd}}
+      {:halt, {best_loc, score_threshold, distance, rd, d}}
     else
-      {:cont, {best_loc, score_threshold, distance, rd}}
+      {:cont, {best_loc, score_threshold, distance, rd, d}}
     end
   end
 
@@ -320,22 +321,22 @@ defmodule Dmp.Match do
   ## Notes
 
   The `j` index is decremented from the end of the text to the start of the text.
-  Since the iteration is moving from high `j` to low, `bitap_update` does "Lshift"
+  Since the iteration is moving from high `j` to low, `bitap_update/3` does "Lshift"
   operations, not the "Rshift" operations in the Wu and Manber paper, and uses
   the previous values that were set at `j + 1`, not `j`.
 
   Here the calculations are:
 
-  $$Rsubscptj^d = \\begin{cases}
-    Lshift [ Rsubscpt{j+1}^d ] \\text{ AND } S_c &\\text{if } d = 0 \\cr
-    Lshift [ Rsubscpt{j+1}^d ] \\text{ AND } S_c \\text{ OR } Lshift [ Rsubscptj^{d-1} \\text{ OR } Rsubscpt{j+1}^{d-1} ] \\text{ OR } Rsubscpt{j+1}^{d-1} &\\text{otherwise}
+  $$R\\xsb{j}^d = \\begin{cases}
+    Lshift [ R\\xsb{j+1}^d ] \\text{ AND } S\\xsb{c} &\\text{if } d = 0 \\cr
+    Lshift [ R\\xsb{j+1}^d ] \\text{ AND } S\\xsb{c} \\text{ OR } Lshift [ R\\xsb{j}^{d-1} \\text{ OR } R\\xsb{j+1}^{d-1} ] \\text{ OR } R\\xsb{j+1}^{d-1} &\\text{otherwise}
   \\end{cases}$$
 
   versus in Wu and Manber's paper:
 
-  $$Rsubscptj^d = \\begin{cases}
-    Rshift [ Rsubscpt{j}^d ] \\text{ AND } S_c &\\text{if } d = 0 \\cr
-    Rshift [ Rsubscpt{j}^d ] \\text{ AND } S_c \\text{ OR } Rshift [ Rsubscptj^{d-1} \\text{ OR } Rsubscpt{j+1}^{d-1} ] \\text{ OR } Rsubscpt{j}^{d-1} &\\text{otherwise}
+  $$R\\xsb{j}^d = \\begin{cases}
+    Rshift [ R\\xsb{j}^d ] \\text{ AND } S\\xsb{c} &\\text{if } d = 0 \\cr
+    Rshift [ R\\xsb{j}^d ] \\text{ AND } S\\xsb{c} \\text{ OR } Rshift [ R\\xsb{j}^{d-1} \\text{ OR } R\\xsb{j+1}^{d-1} ] \\text{ OR } R\\xsb{j}^{d-1} &\\text{otherwise}
   \\end{cases}$$
 
   """
@@ -359,12 +360,10 @@ defmodule Dmp.Match do
         {best_loc, score_threshold, start, rd},
         {d, text, loc, last_rd, s, match_mask, overflow_mask, pattern_length, match_distance}
       ) do
-    # $$S_c$$
-    char_match = s_c(s, String.at(text, j - 1))
-
     # Perform shift-OR update
-
-    # $$Lshift[R_{j+1}^d] AND S_c$$
+    # $$S_{c}$$
+    char_match = character_mask(s, String.at(text, j - 1))
+    # $$Lshift[R_{j+1}^d] \text{ AND } S_{c}$$
     shift_d_and_s_c = (Map.get(rd, j + 1, 0) <<< 1 ||| 1) &&& char_match
 
     rd_j =
@@ -375,21 +374,21 @@ defmodule Dmp.Match do
         # Subsequent passes: fuzzy match.
         # $$R_{j+1}^{d-1}$$
         rd_d1_j1 = Map.get(last_rd, j + 1, 0)
-        # $$R_j^{d-1}$$
+        # $$R_{j}^{d-1}$$
         rd_d1_j = Map.get(last_rd, j, 0)
 
         # Restrict shifted values to pattern_length with $$AND overflow_mask$$
-        # $$Lshift[R_j^{d-1} OR R_{j+1}^{d-1}]$$
+        # $$Lshift[R_{j}^{d-1} \text{ OR } R_{j+1}^{d-1}]$$
         shift_d1 = ((rd_d1_j ||| rd_d1_j1) <<< 1 ||| 1) &&& overflow_mask
 
-        # $$Lshift[R_{j+1}^d] AND S_c OR Lshift[R_j^{d-1} OR R_{j+1}^{d-1}] OR R_{j+1}^{d-1}$$
+        # $$Lshift[R_{j+1}^d] \text{ AND } S_{c} \text{ OR } Lshift[R_{j}^{d-1} \text{ OR } R_{j+1}^{d-1}] \text{ OR } R_{j+1}^{d-1}$$
         shift_d_and_s_c ||| shift_d1 ||| rd_d1_j1
       end
 
     # Update mask array
     rd = Map.put(rd, j, rd_j)
 
-    # Test for a match: $$if Rd_j+1[m] = 1$$
+    # Test for a match: $$\text{if } R_{j+1}^d[m] = 1$$
     if (rd_j &&& match_mask) != 0 do
       # Found a match
       test_score_at_match(
@@ -471,7 +470,10 @@ defmodule Dmp.Match do
 
   `pattern` - The text to encode.
 
-  Returns map of character locations within the pattern. $$S_c$$ in the Wu and Manber paper.
+  Returns map of character locations within the pattern.
+  In the Wu and Manber paper, this is:
+
+  $$S$$
   """
   @spec alphabet(String.t()) :: alpha()
   def alphabet(pattern) when is_binary(pattern) do
@@ -486,18 +488,22 @@ defmodule Dmp.Match do
     end)
   end
 
-  # Look up a character in the alphabet and return its encoded bitmap.
-  #
-  # `s` - An alphabet constructed with `alphabet/1`.
-  # `ch` - A single character string.
-  #
-  # Returns $$S_c$$, a bitarray of positions in the `pattern` for the
-  # character `ch`.
-  @spec s_c(alpha(), String.t()) :: non_neg_integer()
-  defp s_c(_s, nil), do: 0
-  defp s_c(_s, ""), do: 0
+  @doc """
+  Look up a character in the alphabet and return its encoded bitmap.
 
-  defp s_c(s, ch) do
+  * `s` - An alphabet constructed with `alphabet/1`.
+  * `ch` - A single character string.
+
+  Returns a bitarray of positions in the `pattern` for the
+  character `ch`. In Wu and Manber:
+
+  $$S\\xsb{c}$$
+  """
+  @spec character_mask(alpha(), String.t()) :: non_neg_integer()
+  def character_mask(_s, nil), do: 0
+  def character_mask(_s, ""), do: 0
+
+  def character_mask(s, ch) do
     [ord | _] = String.to_charlist(ch)
     Map.get(s, ord, 0)
   end

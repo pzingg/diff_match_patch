@@ -11,6 +11,9 @@ References from the Google project:
 * diff: [An O(ND) Difference Algorithm and Its Variations (Meyers, 1986)](http://www.xmailserver.org/diff2.pdf)
 * match: [Fast Text Searching with Errors (Wu and Manber, 1991)](http://www.club.cc.cmu.edu/~ajo/docs/agrep.pdf)
 
+Prior art on the BEAM:
+
+* diffy: [A Diff, Match and Patch implementation for Erlang](https://github.com/zotonic/diffy)
 
 ## Installation
 
