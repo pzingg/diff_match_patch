@@ -27,3 +27,4 @@ cursor-*.tar
 
 # VS Code
 *.code-workspace
+.elixir_ls
