@@ -5,14 +5,15 @@ defmodule Dmp.DebugUtils do
 
   use Bitwise, only_operators: true
 
-  @smallint_len 14
-
   @doc """
-  Formats the `alphabet` bitarray into a list of lines, showing binary values.
+  Formats an alphabet bitarray into a list of lines, showing binary values.
+
+  * `s` - The alphabet as returned by `Dmp.Match.alphabet/1`.
+  * `pattern` - The pattern that is associated with the alphabet.
 
   ## Examples
 
-      iex> DebugUtils.debug_alphabet("aba", %{?a => 5, ?b => 2})
+      iex> DebugUtils.debug_alphabet(%{?a => 5, ?b => 2}, "aba")
       [
         "alphabet: a b a",
         "    a  5: 1 0 1",
@@ -20,8 +21,8 @@ defmodule Dmp.DebugUtils do
       ]
 
   """
-  @spec debug_alphabet(String.t(), Dmp.Match.alpha()) :: [String.t()]
-  def debug_alphabet(pattern, s) do
+  @spec debug_alphabet(Dmp.Match.alpha(), String.t()) :: [String.t()]
+  def debug_alphabet(s, pattern) do
     pattern_length = String.length(pattern)
     int_len = value_size(pattern_length)
 
@@ -52,13 +53,18 @@ defmodule Dmp.DebugUtils do
   @doc """
   Formats the `rd` bitarray into a list of lines, showing binary values.
 
-  * `d` - Error level for the bitarray.
-  * `start` - Lowest index that has been calculated.
-  * `best_loc` - Index in the text where the best match has been found.
+  * `rd` - The bitarrary.
+  * `text` - The text associated with `rd`.
+  * `pattern` - The pattern associated with `rd`.
+  * `d` - The error level.
+  * `start` - The lowest index that has been calculated. Lines below this
+    index will be marked with an asterisk.
+  * `best_loc` - The index in the text where the best match has been found.
+    The line at this index will be marked with an "@"-sign.
 
   ## Examples
 
-      iex> DebugUtils.debug_rd("abc", "add", 0, %{1 => 5, 2 => 7, -1 => 3}, 1, 2)
+      iex> DebugUtils.debug_rd(%{1 => 5, 2 => 7, -1 => 3}, "abc", "add", 0, 1, 2)
       [
         "  rd_j^0: a d d",
         " 0* _  0: 0 0 0",
@@ -70,14 +76,14 @@ defmodule Dmp.DebugUtils do
 
   """
   @spec debug_rd(
+          Dmp.Match.bitap_array(),
           String.t(),
           String.t(),
           non_neg_integer(),
-          Dmp.Match.bitap_array(),
           non_neg_integer(),
           integer()
         ) :: [String.t()]
-  def debug_rd(text, pattern, d, rd, start \\ 0, best_loc \\ -1) do
+  def debug_rd(rd, text, pattern, d, start \\ 0, best_loc \\ -1) do
     pattern_length = String.length(pattern)
     int_len = value_size(pattern_length)
     rd_size = max(String.length(text) + 2, Map.fetch!(rd, -1))

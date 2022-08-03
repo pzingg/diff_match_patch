@@ -129,7 +129,7 @@ defmodule Dmp.Match do
        match_distance}
 
     # Uncomment to see the bitarray
-    # debug_alphabet(pattern, s) |> Enum.join("\n") |> IO.puts
+    # debug_alphabet(s, pattern) |> Enum.join("\n") |> IO.puts
 
     # Start with `max_distance = text_length + pattern_length`
     # and the $$R_{j}^0$$ array all zero (empty map).
@@ -246,13 +246,13 @@ defmodule Dmp.Match do
         bitap_update(j, acc, constants2)
       end)
 
-    # See if the threshold for match at level `d + 1` is lower than the best
-    # score we found at this level, in which case we have to continue to
-    # that level.
+    # See if the best threshold for a match at location `loc` and
+    # at error level `d + 1` is lower than the best score we found at
+    # this level, in which case we have to continue to level `d + 2.
     d1_score = bitap_score(d + 1, loc, loc, pattern_length, match_distance)
 
     # Uncomment to see the bitarray
-    # debug_rd(text, pattern, d, rd, j, best_loc) |> Enum.join("\n") |> IO.puts
+    # debug_rd(rd, text, pattern, d, j, best_loc) |> Enum.join("\n") |> IO.puts
 
     if d1_score > score_threshold do
       # No hope for a (better) match at greater error levels.
