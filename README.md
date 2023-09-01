@@ -23,7 +23,7 @@ by adding `diff_match_patch` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:diff_match_patch, "~> 0.1.0"}
+    {:diff_match_patch, "~> 0.2.0"}
   ]
 end
 ```

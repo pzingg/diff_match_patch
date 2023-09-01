@@ -1,7 +1,7 @@
 defmodule Dmp.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @github_project_url "https://github.com/pzingg/diff_match_patch"
 
   def project do
