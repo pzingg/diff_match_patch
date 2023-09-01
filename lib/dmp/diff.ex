@@ -759,27 +759,19 @@ defmodule Dmp.Diff do
     * `rest2` - `text2` with the prefix removed.
   """
   @spec common_prefix(String.t(), String.t()) :: {String.t(), String.t(), String.t()}
-  def common_prefix(text1, text2) do
-    # Cache the text lengths to prevent multiple calls.
-    text1_length = String.length(text1)
-    text2_length = String.length(text2)
-    n = min(text1_length, text2_length)
+  def common_prefix(text1, text2), do: do_common_prefix("", text1, text2)
 
-    if n == 0 do
-      {"", text1, text2}
+  defp do_common_prefix(prefix, "", text2), do: {prefix, "", text2}
+  defp do_common_prefix(prefix, text1, ""), do: {prefix, text1, ""}
+
+  defp do_common_prefix(prefix, text1, text2) do
+    {t1, rem1} = String.next_grapheme(text1)
+    {t2, rem2} = String.next_grapheme(text2)
+
+    if t1 == t2 do
+      do_common_prefix(prefix <> t1, rem1, rem2)
     else
-      prefix =
-        Enum.reduce_while(0..(n - 1), "", fn i, acc ->
-          ch = String.at(text1, i)
-
-          if ch == String.at(text2, i) do
-            {:cont, acc <> ch}
-          else
-            {:halt, acc}
-          end
-        end)
-
-      {prefix, String.replace_prefix(text1, prefix, ""), String.replace_prefix(text2, prefix, "")}
+      {prefix, text1, text2}
     end
   end
 
