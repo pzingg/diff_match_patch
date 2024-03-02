@@ -4,10 +4,9 @@ defmodule Dmp.Match do
   Weighted for both accuracy and location.
   """
 
-  use Bitwise, only_operators: true
+  import Bitwise
 
   import Dmp.StringUtils
-  import Dmp.DebugUtils
 
   alias Dmp.Options
 
