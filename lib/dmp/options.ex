@@ -60,7 +60,7 @@ defmodule Dmp.Options do
 
   """
   @spec default() :: t()
-  def default(), do: %Options{} |> Map.from_struct() |> Enum.into([])
+  def default(), do: %Options{} |> Map.from_struct() |> Enum.into([]) |> Enum.sort()
 
   @doc """
   Validates an `Options` list, raising an `ArgumentError` if it contains invalid values.

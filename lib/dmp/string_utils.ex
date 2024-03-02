@@ -3,10 +3,6 @@ defmodule Dmp.StringUtils do
   Java.String- and Javascript-compatible functions missing in Elixir's `String` module.
   """
 
-  use Bitwise, only_operators: true
-
-  alias __MODULE__
-
   @doc """
   Returns the index within this string of the first occurrence of the specified substring,
   or -1 if there is no such occurence.
@@ -106,7 +102,7 @@ defmodule Dmp.StringUtils do
   def last_index_of(s, str, begin_index) do
     s =
       if begin_index > 0 do
-        String.slice(s, begin_index..-1)
+        String.slice(s, begin_index..-1//1)
       else
         s
       end
@@ -136,7 +132,7 @@ defmodule Dmp.StringUtils do
 
   """
   @spec substring(String.t(), non_neg_integer()) :: String.t()
-  def substring(s, begin_index), do: String.slice(s, begin_index..-1)
+  def substring(s, begin_index), do: String.slice(s, begin_index..-1//1)
 
   @doc """
   Returns a new string that is a substring of this string.
