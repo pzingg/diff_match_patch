@@ -8,7 +8,7 @@ defmodule Dmp.MixProject do
     [
       app: :diff_match_patch,
       version: @version,
-      elixir: "~> 1.16",
+      elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       source_url: @github_project_url,
