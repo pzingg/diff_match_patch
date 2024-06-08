@@ -3,7 +3,7 @@ defmodule Dmp.DebugUtils do
   Utilities for debugging bitarrays.
   """
 
-  use Bitwise, only_operators: true
+  import Bitwise
 
   @doc """
   Formats an alphabet bitarray into a list of lines, showing binary values.

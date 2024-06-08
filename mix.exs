@@ -1,14 +1,14 @@
 defmodule Dmp.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @github_project_url "https://github.com/pzingg/diff_match_patch"
 
   def project do
     [
       app: :diff_match_patch,
       version: @version,
-      elixir: "~> 1.11",
+      elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       source_url: @github_project_url,
