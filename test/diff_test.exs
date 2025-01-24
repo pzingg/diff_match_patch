@@ -644,6 +644,10 @@ defmodule DiffTest do
                Diff.main("a123b456c", "abc", false)
     end
 
+    test "short strings bug in Elixir 1.18.2" do
+      assert [{:equal, "A"}, {:delete, "B"}, {:equal, "C"}] =  Dmp.Diff.main("ABC", "AC")
+    end
+
     # Perform a real diff.
     # Switch off the timeout.
 
