@@ -39,6 +39,14 @@ defmodule DiffTest do
       assert {"1234", "abcdef", "xyz"} == Diff.common_prefix("1234abcdef", "1234xyz")
     end
 
+    test "very long sinhala case" do
+      prefix = String.duplicate("එය එසේ වුවත්, විනෝදය හෙළා දැකීම සහ", 5000)
+      t1 = prefix <> "abcdef"
+      t2 = prefix <> "xyz"
+      assert {answer, "abcdef", "xyz"} = Diff.common_prefix(t1, t2)
+      assert answer == prefix
+    end
+
     test "whole case" do
       assert {"1234", "", "xyz"} == Diff.common_prefix("1234", "1234xyz")
     end
@@ -51,6 +59,14 @@ defmodule DiffTest do
 
     test "non-null case" do
       assert {"1234", "abcdef", "xyz"} == Diff.common_suffix("abcdef1234", "xyz1234")
+    end
+
+    test "very long sinhala case" do
+      suffix = String.duplicate("එය එසේ වුවත්, විනෝදය හෙළා දැකීම සහ", 5000)
+      t1 = "abcdef" <> suffix
+      t2 = "xyz" <> suffix
+      assert {answer, "abcdef", "xyz"} = Diff.common_suffix(t1, t2)
+      assert answer == suffix
     end
 
     test "whole case" do
@@ -642,6 +658,10 @@ defmodule DiffTest do
     test "two deletions" do
       assert [{:equal, "a"}, {:delete, "123"}, {:equal, "b"}, {:delete, "456"}, {:equal, "c"}] ==
                Diff.main("a123b456c", "abc", false)
+    end
+
+    test "short strings bug in Elixir 1.18.2" do
+      assert [{:equal, "A"}, {:delete, "B"}, {:equal, "C"}] = Dmp.Diff.main("ABC", "AC")
     end
 
     # Perform a real diff.

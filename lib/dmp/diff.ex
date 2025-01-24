@@ -759,19 +759,21 @@ defmodule Dmp.Diff do
     * `rest2` - `text2` with the prefix removed.
   """
   @spec common_prefix(String.t(), String.t()) :: {String.t(), String.t(), String.t()}
-  def common_prefix(text1, text2), do: do_common_prefix("", text1, text2)
+  def common_prefix(text1, text2) do
+    l1 = String.to_charlist(text1)
+    l2 = String.to_charlist(text2)
+    {prefix, r1, r2} = do_common_prefix([], l1, l2)
+    {Enum.reverse(prefix) |> to_string(), to_string(r1), to_string(r2)}
+  end
 
-  defp do_common_prefix(prefix, "", text2), do: {prefix, "", text2}
-  defp do_common_prefix(prefix, text1, ""), do: {prefix, text1, ""}
+  defp do_common_prefix(prefix, [], l2), do: {prefix, [], l2}
+  defp do_common_prefix(prefix, l1, []), do: {prefix, l1, []}
 
-  defp do_common_prefix(prefix, text1, text2) do
-    {t1, rem1} = String.next_grapheme(text1)
-    {t2, rem2} = String.next_grapheme(text2)
-
+  defp do_common_prefix(prefix, [t1 | rem1] = l1, [t2 | rem2] = l2) do
     if t1 == t2 do
-      do_common_prefix(prefix <> t1, rem1, rem2)
+      do_common_suffix([t1 | prefix], rem1, rem2)
     else
-      {prefix, text1, text2}
+      {prefix, l1, l2}
     end
   end
 
@@ -789,26 +791,20 @@ defmodule Dmp.Diff do
   """
   @spec common_suffix(String.t(), String.t()) :: {String.t(), String.t(), String.t()}
   def common_suffix(text1, text2) do
-    # Cache the text lengths to prevent multiple calls.
-    text1_length = String.length(text1)
-    text2_length = String.length(text2)
-    n = min(text1_length, text2_length)
+    l1 = String.to_charlist(text1) |> Enum.reverse()
+    l2 = String.to_charlist(text2) |> Enum.reverse()
+    {suffix, r1, r2} = do_common_suffix([], l1, l2)
+    {to_string(suffix), Enum.reverse(r1) |> to_string(), Enum.reverse(r2) |> to_string()}
+  end
 
-    if n == 0 do
-      {"", text1, text2}
+  defp do_common_suffix(suffix, [], l2), do: {suffix, [], l2}
+  defp do_common_suffix(suffix, l1, []), do: {suffix, l1, []}
+
+  defp do_common_suffix(suffix, [t1 | rem1] = l1, [t2 | rem2] = l2) do
+    if t1 == t2 do
+      do_common_suffix([t1 | suffix], rem1, rem2)
     else
-      suffix =
-        Enum.reduce_while(1..n, "", fn i, acc ->
-          ch = String.at(text1, text1_length - i)
-
-          if ch == String.at(text2, text2_length - i) do
-            {:cont, ch <> acc}
-          else
-            {:halt, acc}
-          end
-        end)
-
-      {suffix, String.replace_suffix(text1, suffix, ""), String.replace_suffix(text2, suffix, "")}
+      {suffix, l1, l2}
     end
   end
 
